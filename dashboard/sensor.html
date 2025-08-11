@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MF-25 - Sensor Data</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+
+  <!-- Libs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root{
+      --bg-color:#1a1a1a;
+      --panel-color:#2c2c2c;
+      --text-color:#e0e0e0;
+      --accent-yellow:#ffc300;
+      --panel-border:#333;
+      --panel-shadow: rgba(0,0,0,0.5);
+      --card-bg:#111;
+    }
+
+    * { box-sizing: border-box; }
+    body{
+      margin:0;
+      font-family:'Roboto',sans-serif;
+      background:var(--bg-color);
+      color:var(--text-color);
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
+      min-height:100vh;
+      padding:10px;
+    }
+
+    .container{
+      width:100%;
+      max-width:1000px;
+      background:#000;
+      border:2px solid var(--panel-border);
+      border-radius:10px;
+      padding:10px;
+      box-shadow:0 0 20px var(--panel-shadow);
+    }
+
+    nav{
+      display:flex;
+      flex-wrap:wrap;
+      border-bottom:2px solid var(--panel-border);
+      margin-bottom:15px;
+    }
+    nav a{
+      flex:1;
+      min-width:120px;
+      text-align:center;
+      padding:10px;
+      color:var(--text-color);
+      text-decoration:none;
+      font-family:'Orbitron',sans-serif;
+      font-weight:500;
+      border-bottom:3px solid transparent;
+      transition:all .3s ease;
+    }
+    nav a.active{
+      color:var(--accent-yellow);
+      border-bottom-color:var(--accent-yellow);
+    }
+
+    /* Graphs grid */
+    .graphs{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));
+      gap:15px;
+      padding:15px;
+      background:var(--panel-color);
+      border-radius:8px;
+    }
+    .sensor-box{
+      background:#111;
+      border:1px solid var(--panel-border);
+      border-radius:10px;
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      box-shadow: inset 0 0 8px rgba(255,195,0,0.08);
+    }
+    .sensor-title{
+      font-family:'Orbitron',sans-serif;
+      font-weight:700;
+      letter-spacing:0.5px;
+      text-align:center;
+      color:#9bcfff;
+      font-size:18px;
+    }
+    .chart-wrap{ position:relative; width:100%; height:220px; }
+    canvas{
+      background:#0b0b0b;
+      border-radius:8px;
+      border:1px solid #1f1f1f;
+    }
+
+    /* All sensors table */
+    .all-data {
+      margin-top: 16px;
+      background: #0c0c0c;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .all-toolbar{
+      display:flex; gap:10px; align-items:center;
+      padding:10px; border-bottom:1px solid #222; background:#191919;
+      flex-wrap: wrap;
+    }
+    .all-title{ font-family:'Orbitron',sans-serif; font-weight:700; margin-right:auto; }
+    .legend { display:flex; gap:10px; align-items:center; font-size:12px; color:#bbb; }
+    .chip { width:14px; height:14px; border-radius:3px; display:inline-block; margin-right:6px; }
+    .chip.warn { background: #ff9f1a; }
+    .chip.crit { background: #e74c3c; }
+    .toolbar-input{
+      background:#101010; border:1px solid #333; color:var(--text-color);
+      border-radius:6px; padding:8px 10px; min-width:200px; outline:none;
+    }
+    .toolbar-btn, .toolbar-check{
+      background:#111; border:1px solid #444; color:var(--text-color);
+      border-radius:6px; padding:8px 12px; cursor:pointer; transition:filter .15s ease;
+    }
+    .toolbar-check{
+      display:flex; align-items:center; gap:6px; padding:6px 10px; user-select:none;
+    }
+    .toolbar-btn:hover{ filter:brightness(1.15); }
+
+    .all-data table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .all-data thead th {
+      position:sticky; top:0;
+      background: #222;
+      color: var(--text-color);
+      font-family: 'Orbitron', sans-serif;
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #333;
+      z-index:1;
+    }
+    .all-data tbody td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #1e1e1e;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .all-data tbody tr:nth-child(odd) { background: #111; }
+    .all-data tbody tr:nth-child(even) { background: #151515; }
+    .all-data tbody td.value { color: var(--accent-yellow); font-weight: 700; }
+
+    /* 숨기기 버튼 */
+    .hide-btn, .unhide-btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:22px; height:22px; border-radius:6px; margin-right:8px;
+      font-weight:700; line-height:1; cursor:pointer; border:1px solid #444;
+      background:#0e0e0e; color:#bbb;
+    }
+    .hide-btn:hover{ filter:brightness(1.2); }
+    .unhide-btn{ color:#ddd; }
+
+    /* highlight */
+    .warn  { background: rgba(255,159,26,0.18) !important; color:#ffe9cc; }
+    .crit  { background: rgba(231,76,60,0.28) !important; color:#ffecec; }
+    .pulse { animation: pulse-bg 1.2s ease-out; }
+    @keyframes pulse-bg {
+      0%   { box-shadow: inset 0 0 0px rgba(255,195,0,0); }
+      10%  { box-shadow: inset 0 0 12px rgba(255,195,0,.45); }
+      100% { box-shadow: inset 0 0 0px rgba(255,195,0,0); }
+    }
+
+    @media (max-width:768px){ .chart-wrap{ height:180px; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <a href="./dashboard.html">Main Dashboard</a>
+      <a href="./sensor.html">Sensor data</a>
+      <a href="./gps.html">GPS</a>
+    </nav>
+
+    <!-- Graph grid -->
+    <section class="graphs">
+      <div class="sensor-box">
+        <div class="sensor-title">CLT IN</div>
+        <div class="chart-wrap"><canvas id="clt_IN_Chart"></canvas></div>
+      </div>
+      <div class="sensor-box">
+        <div class="sensor-title">CLT OUT</div>
+        <div class="chart-wrap"><canvas id="clt_OUT_Chart"></canvas></div>
+      </div>
+      <div class="sensor-box">
+        <div class="sensor-title">EOT IN</div>
+        <div class="chart-wrap"><canvas id="eotInChart"></canvas></div>
+      </div>
+      <div class="sensor-box">
+        <div class="sensor-title">EOT OUT</div>
+        <div class="chart-wrap"><canvas id="eotOutChart"></canvas></div>
+      </div>
+      <div class="sensor-box">
+        <div class="sensor-title">TPS</div>
+        <div class="chart-wrap"><canvas id="tpsChart"></canvas></div>
+      </div>
+      <div class="sensor-box">
+        <div class="sensor-title">IAT</div>
+        <div class="chart-wrap"><canvas id="IATChart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- All sensors table (no scroll: shows full list) -->
+    <div class="all-data">
+      <div class="all-toolbar">
+        <div class="all-title">All Sensors</div>
+        <div class="legend">
+          <span class="chip warn"></span>Warn
+          <span class="chip crit" style="margin-left:10px;"></span>Critical
+        </div>
+        <input id="filter-input" class="toolbar-input" type="text" placeholder="키/값 필터…" />
+        <label class="toolbar-check"><input type="checkbox" id="toggle-hidden"> 숨김 키 보기</label>
+        <label class="toolbar-check"><input type="checkbox" id="toggle-pin" checked> 중요 키 우선</label>
+        <label class="toolbar-check"><input type="checkbox" id="toggle-freeze"> 테이블 동결</label>
+        <button id="copy-json" class="toolbar-btn" title="현재 스냅샷 JSON 복사">Copy JSON</button>
+        <button id="copy-csv" class="toolbar-btn" title="현재 테이블 CSV 복사">Copy CSV</button>
+      </div>
+      <!-- ↓↓↓ 여기 스타일 래퍼의 max-height/overflow 제거 -->
+      <div>
+        <table>
+          <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+          <tbody id="all-data-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Highlight current nav
+    document.addEventListener("DOMContentLoaded", () => {
+      const links = document.querySelectorAll('nav a');
+      const current = window.location.pathname.split('/').pop() || 'sensor.html';
+      links.forEach(a => { if (a.getAttribute('href').includes(current)) a.classList.add('active'); });
+    });
+
+    // Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyA44pnRn5t073UuSOPw3mkVwjvCLP4ZzJU",
+      authDomain: "emucanlogger.firebaseapp.com",
+      databaseURL: "https://emucanlogger-default-rtdb.firebaseio.com",
+      projectId: "emucanlogger",
+      storageBucket: "emucanlogger.firebasestorage.app",
+      messagingSenderId: "289716936070",
+      appId: "1:289716936070:web:8502e0f2c69ae362616007"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Chart factory
+    function createChart(ctx, unitLabel, stroke){
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: unitLabel,
+            data: [],
+            borderColor: stroke,
+            backgroundColor: 'rgba(255, 195, 0, 0.08)',
+            tension: 0.3,
+            pointRadius: 0,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              ticks: { color: '#b5c8ff', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 },
+              grid: { color: '#222' }
+            },
+            y: {
+              ticks: { color: '#b5c8ff' },
+              grid: { color: '#222' }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: '#e0e0e0', font: { size: 12, family: 'Roboto' } }
+            }
+          }
+        }
+      });
+    }
+
+    const charts = {
+      clt_IN:  createChart(document.getElementById('clt_IN_Chart').getContext('2d'), '°C', '#4cc9f0'),
+      clt_OUT: createChart(document.getElementById('clt_OUT_Chart').getContext('2d'), '°C', '#4cc9f0'),
+      eotIn:   createChart(document.getElementById('eotInChart').getContext('2d'),    '°C', '#f72585'),
+      eotOut:  createChart(document.getElementById('eotOutChart').getContext('2d'),   '°C', '#b5179e'),
+      tps:     createChart(document.getElementById('tpsChart').getContext('2d'),      '%',  '#ffc300'),
+      IAT:     createChart(document.getElementById('IATChart').getContext('2d'),      '°C', '#4cc9f0'),
+    };
+
+    function addData(chart, value){
+      if (value === undefined || value === null) return;
+      const now = new Date().toLocaleTimeString();
+      chart.data.labels.push(now);
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.labels.length > 30){
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+
+    // ====== Table (cleaned like dashboard) ======
+    const BASE_HIDDEN = ['lat','lon','gps_fix','timestamp','_path','millis','time','session_id'];
+    const IMPORTANT_ORDER = ['RPM','VSS_kmh','Gear','CLT_C','OilTemp_C','IAT_C','FuelPressure_bar','OilPressure_bar','Batt_V','TPS_percent','CEL_Error'];
+
+    const RULES = {
+      CLT_C: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+      clt_IN: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+      clt_OUT: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+      OilTemp_C: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
+      eotIn: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
+      eotOut: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
+      IAT: v => v>=70 ? 'warn' : null,
+      IAT_C: v => v>=70 ? 'warn' : null,
+      FuelPressure_bar: v => v<2.5 ? 'warn' : null,
+      OilPressure_bar: v => v<0.5 ? 'crit' : (v<1.0 ? 'warn' : null),
+      Batt_V: v => v<11.5 ? 'crit' : (v<12.0 ? 'warn' : null),
+      CEL_Error: v => Number(v)!==0 ? 'crit' : null
+    };
+
+    const HIDE_STORE_KEY = 'mf25_userHiddenKeys';
+    const userHidden = new Set(JSON.parse(localStorage.getItem(HIDE_STORE_KEY) || '[]'));
+    function saveHidden(){ localStorage.setItem(HIDE_STORE_KEY, JSON.stringify([...userHidden])); }
+
+    const ui = {
+      allDataBody: document.getElementById('all-data-body'),
+      filterInput: document.getElementById('filter-input'),
+      toggleHidden: document.getElementById('toggle-hidden'),
+      togglePin: document.getElementById('toggle-pin'),
+      toggleFreeze: document.getElementById('toggle-freeze'),
+      copyJsonBtn: document.getElementById('copy-json'),
+      copyCsvBtn: document.getElementById('copy-csv')
+    };
+
+    let lastSnapshot = null;
+    const lastValues = new Map(); // pulse만 유지
+    const rowsCache = [];
+
+    function classify(k, raw){
+      const v = Number(raw);
+      if (!isFinite(v)) return null;
+      const r = RULES[k];
+      if (typeof r === 'function') return r(v);
+      if (/_C$/.test(k)) { if (v>=130) return 'crit'; if (v>=110) return 'warn'; }
+      return null;
+    }
+
+    function makeRowHtml(k, display, sev, isHidden) {
+      const btn = isHidden
+        ? `<button class="unhide-btn" data-action="unhide" data-key="${k}" title="보이기">+</button>`
+        : `<button class="hide-btn" data-action="hide" data-key="${k}" title="숨기기">−</button>`;
+      return `<tr data-key="${k}" data-val="${String(display)}" class="${sev?sev:''}">
+        <td>${btn}<span>${k}</span></td>
+        <td class="value">${display}</td>
+      </tr>`;
+    }
+
+    function renderAllSensorsTable(data){
+      const showHidden = ui.toggleHidden.checked;
+      const pinImportant = ui.togglePin.checked;
+
+      const entries = [];
+      for (const k in data){
+        if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+
+        const baseHidden = BASE_HIDDEN.includes(k);
+        const userHide = userHidden.has(k);
+        const shouldHide = (!showHidden) && (baseHidden || userHide);
+        if (shouldHide) continue;
+
+        const raw = data[k];
+        const isNum = typeof raw === 'number';
+        const display = isNum && !Number.isInteger(raw) ? Number(raw.toFixed(3)) : raw;
+        const sev = classify(k, raw);
+
+        entries.push({ key:k, display, sev, isHidden:(baseHidden || userHide) });
+      }
+
+      if (pinImportant){
+        const idx = k => { const i = IMPORTANT_ORDER.indexOf(k); return i === -1 ? 999 : i; };
+        entries.sort((a,b)=> idx(a.key) - idx(b.key) || a.key.localeCompare(b.key));
+      } else {
+        entries.sort((a,b)=> a.key.localeCompare(b.key));
+      }
+
+      let html = '';
+      rowsCache.length = 0;
+      entries.forEach(r => {
+        html += makeRowHtml(r.key, r.display, r.sev, r.isHidden && ui.toggleHidden.checked);
+        rowsCache.push({key:r.key, display:r.display});
+      });
+      ui.allDataBody.innerHTML = html;
+
+      // pulse on change
+      [...ui.allDataBody.querySelectorAll('tr')].forEach(tr => {
+        const key = tr.getAttribute('data-key');
+        const cell = tr.querySelector('.value');
+        const rawStr = tr.getAttribute('data-val');
+        const currentVal = isNaN(Number(rawStr)) ? rawStr : Number(rawStr);
+        const had = lastValues.has(key);
+        const prevVal = lastValues.get(key);
+        const changed = had ? currentVal !== prevVal : false;
+        if (changed){
+          cell.classList.remove('pulse'); void cell.offsetWidth; cell.classList.add('pulse');
+          cell.title = `prev: ${prevVal}`;
+        }
+        lastValues.set(key, currentVal);
+      });
+    }
+
+    // delegate hide/unhide
+    ui.allDataBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const key = btn.getAttribute('data-key');
+      const action = btn.getAttribute('data-action');
+      if (!key) return;
+      if (action === 'hide') { userHidden.add(key); saveHidden(); }
+      else if (action === 'unhide') { userHidden.delete(key); saveHidden(); }
+      if (lastSnapshot) renderAllSensorsTable(lastSnapshot);
+    });
+
+    // filter
+    ui.filterInput.addEventListener('input', () => {
+      const q = ui.filterInput.value.trim().toLowerCase();
+      const rows = ui.allDataBody.querySelectorAll('tr');
+      rows.forEach(r => {
+        const k = r.children[0].innerText.toLowerCase();
+        const d = r.children[1].innerText.toLowerCase(); // Value 열
+        r.style.display = (k.includes(q) || d.includes(q)) ? '' : 'none';
+      });
+    });
+
+    // toggles
+    [ui.toggleHidden, ui.togglePin].forEach(el => {
+      el.addEventListener('change', () => { if (lastSnapshot) renderAllSensorsTable(lastSnapshot); });
+    });
+
+    // copy buttons
+    ui.copyJsonBtn.addEventListener('click', async () => {
+      if (!lastSnapshot) return;
+      try{
+        await navigator.clipboard.writeText(JSON.stringify(lastSnapshot, null, 2));
+        ui.copyJsonBtn.textContent = 'Copied!';
+        setTimeout(() => ui.copyJsonBtn.textContent = 'Copy JSON', 900);
+      }catch(e){
+        ui.copyJsonBtn.textContent = 'Copy failed';
+        setTimeout(() => ui.copyJsonBtn.textContent = 'Copy JSON', 1200);
+      }
+    });
+    ui.copyCsvBtn.addEventListener('click', async () => {
+      const header = ['Parameter','Value'];
+      const lines = [header.join(',')];
+      rowsCache.forEach(r => {
+        const esc = s => String(s).replace(/"/g,'""');
+        lines.push([`"${esc(r.key)}"`,`"${esc(r.display)}"`].join(','));
+      });
+      try{
+        await navigator.clipboard.writeText(lines.join('\n'));
+        ui.copyCsvBtn.textContent = 'Copied!';
+        setTimeout(() => ui.copyCsvBtn.textContent = 'Copy CSV', 900);
+      }catch(e){
+        ui.copyCsvBtn.textContent = 'Copy failed';
+        setTimeout(() => ui.copyCsvBtn.textContent = 'Copy CSV', 1200);
+      }
+    });
+
+    // ====== Realtime ======
+    const dataRef = db.ref("emu_realtime_data");
+    dataRef.on("value", (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      // charts
+      addData(charts.clt_IN,  data.clt_IN);
+      addData(charts.clt_OUT, data.clt_OUT);
+      addData(charts.eotIn,   data.eotIn);
+      addData(charts.eotOut,  data.eotOut);
+      addData(charts.tps,     data.TPS_percent);
+      addData(charts.IAT,     data.IAT);
+
+      // table
+      if (!ui.toggleFreeze.checked) {
+        lastSnapshot = data;
+        renderAllSensorsTable(data);
+      }
+    });
+  </script>
+</body>
+</html>
