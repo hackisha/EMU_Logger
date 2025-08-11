@@ -34,6 +34,5 @@ FB_PATHS = {
     "CAN_TIMESERIES": "/timeseries/can",
     "GPS_TIMESERIES": "/timeseries/gps",
     "ACC_TIMESERIES": "/timeseries/acc",
-    # ★ 웹(gps.html)이 구독하는 레거시 경로:
     "LEGACY_REALTIME": "/emu_realtime_data",
 }
