@@ -1,46 +1,42 @@
 # -*- coding: utf-8 -*-
 
-import json
-import time
-from typing import Any, Dict, Optional
-import requests
-from .config import FIREBASE_DB_URL, FIREBASE_AUTH, FIREBASE_ENABLE
+import os
 
-class FirebaseClient:
-    def __init__(self, base_url: str = FIREBASE_DB_URL, auth: Optional[str] = FIREBASE_AUTH, enabled: bool = FIREBASE_ENABLE):
-        self.base_url = base_url
-        self.auth = auth
-        self.enabled = enabled and bool(base_url)
+# ===================== 공통 설정 =====================
+LOG_DIR = "/home/pi/can_logger/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
 
-    def _url(self, path: str) -> str:
-        path = path if path.startswith("/") else ("/" + path)
-        url = f"{self.base_url}{path}.json"
-        if self.auth:
-            url += f"?auth={self.auth}"
-        return url
+# ===================== CAN 설정 =====================
+CAN_CHANNEL = "can0"
+CAN_BITRATE = 1_000_000  # 1 Mbps
+EMU_ID_BASE = 0x600
 
-    def patch(self, path: str, data: Dict[str, Any]) -> bool:
-        """경로에 현재 상태를 업데이트 (부분 갱신)"""
-        if not self.enabled:
-            return True
-        try:
-            r = requests.patch(self._url(path), data=json.dumps(data), timeout=3)
-            r.raise_for_status()
-            return True
-        except requests.RequestException:
-            return False
+# FRAME_0 ~ FRAME_7
+EMU_IDS = {f"FRAME_{i}": EMU_ID_BASE + i for i in range(8)}
 
-    def post(self, path: str, data: Dict[str, Any]) -> bool:
-        """경로에 새 노드로 추가(시계열 적합)"""
-        if not self.enabled:
-            return True
-        try:
-            r = requests.post(self._url(path), data=json.dumps(data), timeout=3)
-            r.raise_for_status()
-            return True
-        except requests.RequestException:
-            return False
+# ===================== GPS 설정 =====================
+SERIAL_PORT = "/dev/serial0"
+BAUD_RATE = 9600
 
-    @staticmethod
-    def now_ms() -> int:
-        return int(time.time() * 1000)
+# ===================== GPIO 핀 (BCM) =================
+BUTTON_PIN = 17        # 로깅 시작/정지 토글 버튼
+LOGGING_LED_PIN = 27   # 로깅 상태 LED
+ERROR_LED_PIN = 22     # 오류 LED
+WIFI_LED_PIN = 5       # Wi‑Fi 상태 LED
+
+# ===================== Firebase 설정 =================
+# Realtime Database URL 예: "https://<project-id>.firebaseio.com/"
+FIREBASE_DB_URL = os.environ.get("FIREBASE_DB_URL", "").rstrip("/")
+# DB Secret 또는 사용자 토큰(선택). 없으면 인증 없이 공개 규칙에 따름
+FIREBASE_AUTH = os.environ.get("FIREBASE_AUTH", "") or None
+
+# 경로 정의 (원하면 수정)
+FB_PATHS = {
+    "CAN_REALTIME": "/realtime/can",     # 최근 CAN 상태 (PATCH)
+    "GPS_REALTIME": "/realtime/gps",     # 최근 GPS 상태 (PATCH)
+    "CAN_TIMESERIES": "/timeseries/can", # 시계열(POST)
+    "GPS_TIMESERIES": "/timeseries/gps", # 시계열(POST)
+}
+
+# Firebase 사용 on/off (테스트시 끌 수 있음)
+FIREBASE_ENABLE = True
