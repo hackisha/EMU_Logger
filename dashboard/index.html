@@ -228,6 +228,52 @@
     .indicator svg { width: 100%; height: 100%; fill: #555; transition: fill .2s ease; }
     .indicator.active svg { fill: var(--warning-red); }
 
+    /* Modal (history) */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+    }
+    .modal-content {
+      background: #000;
+      border: 2px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 12px;
+      width: clamp(320px, 92vw, 560px);
+      max-height: 70vh;
+      box-shadow: 0 0 20px var(--panel-shadow);
+      position: relative;
+      overflow: hidden;
+      animation: pop .12s ease-out;
+    }
+    @keyframes pop {
+      from { transform: scale(.97); opacity: .9; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+    .modal-close {
+      position: absolute; top: 8px; right: 12px;
+      font-size: 26px; cursor: pointer; line-height: 1;
+      color: var(--accent-yellow);
+      background: rgba(255,195,0,0.08);
+      border: 1px solid var(--accent-yellow);
+      border-radius: 6px;
+      padding: 2px 8px;
+      text-shadow: 0 0 8px rgba(255,195,0,0.6);
+    }
+    #chart-title {
+      font-family: 'Orbitron', sans-serif;
+      text-align: center; margin: 6px 0 8px 0; font-size: 18px;
+      color:#ffd666;
+    }
+    #sensor-chart {
+      display: block;
+      width: 100% !important;
+      height: clamp(180px, 45vh, 300px) !important;
+    }
+
     /* Responsive */
     @media (max-width: 768px){
       .gauges-grid { grid-template-columns: repeat(2, 1fr); }
@@ -277,7 +323,6 @@
           <div class="gauge-bar-labels"><span>0</span><span>5</span><span>10</span></div>
         </div>
 
-        <!-- bar4는 EOT_OUT -->
         <div class="gauge" data-key="EOT_OUT" data-label="Oil Temp OUT">
           <div class="gauge-label">EOT OUT</div>
           <div class="gauge-bar-container"><div class="gauge-bar" id="bar4"></div></div>
@@ -290,7 +335,6 @@
           <div class="gauge-bar-labels"><span>0%</span><span>50%</span><span>100%</span></div>
         </div>
 
-        <!-- 신규: fuelPumpTemp -->
         <div class="gauge" data-key="fuelPumpTemp" data-label="Fuel Pump Temp">
           <div class="gauge-label">Fuel Pump Temp</div>
           <div class="gauge-bar-container"><div class="gauge-bar" id="bar6"></div></div>
@@ -321,6 +365,15 @@
       <!-- All sensors table: 외부 컴포넌트 -->
       <div id="all-sensors-container" style="margin-top:16px;"></div>
     </section>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="graph-modal" role="dialog" aria-modal="true" aria-labelledby="chart-title">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
+      <h3 id="chart-title">Sensor History</h3>
+      <canvas id="sensor-chart"></canvas>
+    </div>
   </div>
 
   <!-- Firebase (compat) -->
@@ -368,13 +421,76 @@
       gauges: document.querySelectorAll('.gauge'),
       celIndicator: document.getElementById('cel-indicator'),
       battIndicator: document.getElementById('batt-indicator'),
+
+      // modal
+      modal: document.getElementById('graph-modal'),
+      modalCloseBtn: document.getElementById('modal-close-btn'),
+      chartTitle: document.getElementById('chart-title'),
+      chartCtx: document.getElementById('sensor-chart').getContext('2d')
     };
 
-    // History buffers for modal charts (kept minimal here)
+    // ===== History buffers (for all sensors) =====
     const MAX_DATA_POINTS = 50;
     const sensorHistory = {};
     sensorMap.forEach(s => { sensorHistory[s.key] = { labels: [], data: [] }; });
 
+    // ===== Modal chart =====
+    let currentModalKey = null;       // 현재 모달에 표시 중인 센서 키
+    let isModalOpen = false;
+
+    let sensorChart = new Chart(ui.chartCtx, {
+      type: 'line',
+      data: { labels: [], datasets: [{
+        label: 'Value',
+        data: [],
+        borderColor: '#ffc300',
+        backgroundColor: 'rgba(255,195,0,0.12)',
+        borderWidth: 2, tension: 0.3, fill: true, pointRadius: 0
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 150 },
+        scales: {
+          x: { ticks: { display: false }, grid: { color: '#222' } },
+          y: { beginAtZero: true, grid: { color: '#222' }, ticks: { color: '#e0e0e0' } }
+        },
+        plugins: { legend: { labels: { color: '#e0e0e0', font: { family: 'Roboto' } } } },
+        layout: { padding: { left: 2, right: 2, top: 0, bottom: 0 } }
+      }
+    });
+
+    // Open modal on gauge click
+    ui.gauges.forEach(g => {
+      g.addEventListener('click', () => {
+        const key = g.dataset.key;
+        const label = g.dataset.label || key;
+        const h = sensorHistory[key];
+        if (!h) return;
+
+        currentModalKey = key;
+        ui.chartTitle.textContent = `${label} History`;
+        // seed 현재 버퍼
+        sensorChart.data.labels = h.labels.slice();
+        sensorChart.data.datasets[0].data = h.data.slice();
+        sensorChart.data.datasets[0].label = label;
+        sensorChart.update();
+
+        isModalOpen = true;
+        ui.modal.style.display = 'flex';
+      });
+    });
+
+    // Close modal
+    function closeModal(){
+      isModalOpen = false;
+      currentModalKey = null;
+      ui.modal.style.display = 'none';
+    }
+    ui.modalCloseBtn.addEventListener('click', closeModal);
+    ui.modal.addEventListener('click', (e) => { if (e.target === ui.modal) closeModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    // ===== Main update loop =====
     function update(data){
       if (!data) return;
 
@@ -410,19 +526,29 @@
       ui.celIndicator.classList.toggle('active', Number(data.CEL_Error ?? 0) !== 0);
       ui.battIndicator.classList.toggle('active', Number(data.Batt_V ?? 14) < 12.0);
 
-      // history (optional)
+      // History buffers + modal live-append
       const now = new Date().toLocaleTimeString();
       sensorMap.forEach(s => {
         const v = data[s.key];
-        if (v !== undefined) {
-          const h = sensorHistory[s.key];
-          h.labels.push(now);
-          h.data.push(v);
-          if (h.data.length > MAX_DATA_POINTS) { h.labels.shift(); h.data.shift(); }
+        if (v === undefined) return;
+
+        const h = sensorHistory[s.key];
+        h.labels.push(now);
+        h.data.push(v);
+        if (h.data.length > MAX_DATA_POINTS) { h.labels.shift(); h.data.shift(); }
+
+        // 모달이 열려 있고 현재 센서라면 실시간 반영
+        if (isModalOpen && currentModalKey === s.key) {
+          const labels = sensorChart.data.labels;
+          const series = sensorChart.data.datasets[0].data;
+          labels.push(now);
+          series.push(v);
+          if (labels.length > MAX_DATA_POINTS) { labels.shift(); series.shift(); }
+          sensorChart.update('none'); // 부드러운 실시간
         }
       });
 
-      // ▼ 공용 테이블 업데이트
+      // 공용 테이블 업데이트
       if (window.allSensorsTable) window.allSensorsTable.update(data);
     }
 
