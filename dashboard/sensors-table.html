@@ -1,0 +1,48 @@
+<!-- sensors-table.html -->
+<section class="all-data-root">
+  <style>
+    .all-data { margin-top: 16px; background:#0c0c0c; border:1px solid #2a2a2a; border-radius:8px; overflow:hidden; }
+    .all-toolbar{ display:flex; gap:10px; align-items:center; padding:10px; border-bottom:1px solid #222; background:#191919; flex-wrap:wrap; }
+    .all-title{ font-family:'Orbitron',sans-serif; font-weight:700; margin-right:auto; color:#eaeaea; }
+    .legend { display:flex; gap:10px; align-items:center; font-size:12px; color:#bbb; }
+    .chip{ width:14px; height:14px; border-radius:3px; display:inline-block; margin-right:6px; }
+    .chip.warn { background:#ff9f1a; } .chip.crit { background:#e74c3c; }
+    .toolbar-input{ background:#101010; border:1px solid #333; color:#e0e0e0; border-radius:6px; padding:8px 10px; min-width:200px; outline:none; }
+    .toolbar-btn,.toolbar-check{ background:#111; border:1px solid #444; color:#e0e0e0; border-radius:6px; padding:8px 12px; cursor:pointer; transition:filter .15s ease; }
+    .toolbar-check{ display:flex; align-items:center; gap:6px; padding:6px 10px; user-select:none; }
+    .toolbar-btn:hover{ filter:brightness(1.15); }
+
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    thead th{ position:sticky; top:0; background:#222; color:#e0e0e0; font-family:'Orbitron',sans-serif; padding:10px; text-align:left; border-bottom:1px solid #333; z-index:1; }
+    tbody td{ padding:8px 10px; border-bottom:1px solid #1e1e1e; white-space:nowrap; vertical-align:middle; }
+    tbody tr:nth-child(odd){ background:#111; } tbody tr:nth-child(even){ background:#151515; }
+    td.value{ color:#ffc300; font-weight:700; }
+
+    .hide-btn,.unhide-btn{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:6px; margin-right:8px; font-weight:700; line-height:1; cursor:pointer; border:1px solid #444; background:#0e0e0e; color:#bbb; }
+    .hide-btn:hover{ filter:brightness(1.2); } .unhide-btn{ color:#ddd; }
+
+    .pulse { animation:pulse-bg 1.2s ease-out; }
+    @keyframes pulse-bg{ 0%{box-shadow:inset 0 0 0 rgba(255,195,0,0)} 10%{box-shadow:inset 0 0 12px rgba(255,195,0,.45)} 100%{box-shadow:inset 0 0 0 rgba(255,195,0,0)} }
+    .warn{ background:rgba(255,159,26,.18)!important; color:#ffe9cc; }
+    .crit{ background:rgba(231,76,60,.28)!important; color:#ffecec; }
+  </style>
+
+  <div class="all-data">
+    <div class="all-toolbar">
+      <div class="all-title">All Sensors</div>
+      <div class="legend"><span class="chip warn"></span>Warn <span class="chip crit" style="margin-left:10px;"></span>Critical</div>
+      <input class="toolbar-input js-filter" type="text" placeholder="키/값 필터…" />
+      <label class="toolbar-check"><input type="checkbox" class="js-toggle-hidden"> 숨김 키 보기</label>
+      <label class="toolbar-check"><input type="checkbox" class="js-toggle-pin" checked> 중요 키 우선</label>
+      <label class="toolbar-check"><input type="checkbox" class="js-toggle-freeze"> 테이블 동결</label>
+      <button class="toolbar-btn js-copy-json" title="현재 스냅샷 JSON 복사">Copy JSON</button>
+      <button class="toolbar-btn js-copy-csv" title="현재 테이블 CSV 복사">Copy CSV</button>
+    </div>
+    <div style="max-height:380px; overflow:auto;">
+      <table>
+        <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+        <tbody class="js-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
