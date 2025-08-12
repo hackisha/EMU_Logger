@@ -228,124 +228,6 @@
     .indicator svg { width: 100%; height: 100%; fill: #555; transition: fill .2s ease; }
     .indicator.active svg { fill: var(--warning-red); }
 
-    /* All sensors table (cleaned) */
-    .all-data {
-      margin-top: 16px;
-      background: #0c0c0c;
-      border: 1px solid var(--panel-border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .all-toolbar{
-      display:flex; gap:10px; align-items:center;
-      padding:10px; border-bottom:1px solid #222; background:#191919;
-      flex-wrap: wrap;
-    }
-    .all-title{ font-family:'Orbitron',sans-serif; font-weight:700; margin-right:auto; }
-    .legend { display:flex; gap:10px; align-items:center; font-size:12px; color:#bbb; }
-    .chip { width:14px; height:14px; border-radius:3px; display:inline-block; margin-right:6px; }
-    .chip.warn { background: #ff9f1a; }
-    .chip.crit { background: #e74c3c; }
-    .toolbar-input{
-      background:#101010; border:1px solid #333; color:var(--text-color);
-      border-radius:6px; padding:8px 10px; min-width:200px; outline:none;
-    }
-    .toolbar-btn, .toolbar-check{
-      background:#111; border:1px solid #444; color:var(--text-color);
-      border-radius:6px; padding:8px 12px; cursor:pointer; transition:filter .15s ease;
-    }
-    .toolbar-check{
-      display:flex; align-items:center; gap:6px; padding:6px 10px; user-select:none;
-    }
-    .toolbar-btn:hover{ filter:brightness(1.15); }
-
-    .all-data table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    .all-data thead th {
-      position:sticky; top:0;
-      background: #222;
-      color: var(--text-color);
-      font-family: 'Orbitron', sans-serif;
-      padding: 10px;
-      text-align: left;
-      border-bottom: 1px solid #333;
-      z-index:1;
-    }
-    .all-data tbody td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #1e1e1e;
-      white-space: nowrap;
-      vertical-align: middle;
-    }
-    .all-data tbody tr:nth-child(odd) { background: #111; }
-    .all-data tbody tr:nth-child(even) { background: #151515; }
-    .all-data tbody td.value { color: var(--accent-yellow); font-weight: 700; }
-
-    /* 숨기기 버튼 */
-    .hide-btn, .unhide-btn{
-      display:inline-flex; align-items:center; justify-content:center;
-      width:22px; height:22px; border-radius:6px; margin-right:8px;
-      font-weight:700; line-height:1; cursor:pointer; border:1px solid #444;
-      background:#0e0e0e; color:#bbb;
-    }
-    .hide-btn:hover{ filter:brightness(1.2); }
-    .unhide-btn{ color:#ddd; }
-
-    /* 변화 감지(펄스만 유지) */
-    .pulse { animation: pulse-bg 1.2s ease-out; }
-    @keyframes pulse-bg {
-      0%   { box-shadow: inset 0 0 0px rgba(255,195,0,0); }
-      10%  { box-shadow: inset 0 0 12px rgba(255,195,0,.45); }
-      100% { box-shadow: inset 0 0 0px rgba(255,195,0,0); }
-    }
-    .warn  { background: rgba(255,159,26,0.18) !important; color:#ffe9cc; }
-    .crit  { background: rgba(231,76,60,0.28) !important; color:#ffecec; }
-
-    /* Modal */
-    .modal-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.7);
-      display: none;
-      justify-content: center;
-      align-items: center;
-      z-index: 2000;
-    }
-    .modal-content {
-      background: #000;
-      border: 2px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 12px;
-      width: clamp(320px, 92vw, 560px);
-      max-height: 70vh;
-      box-shadow: 0 0 20px var(--panel-shadow);
-      position: relative;
-      overflow: hidden;
-      animation: pop .12s ease-out;
-    }
-    @keyframes pop {
-      from { transform: scale(.97); opacity: .9; }
-      to   { transform: scale(1);   opacity: 1; }
-    }
-    .modal-close {
-      position: absolute; top: 8px; right: 12px;
-      font-size: 26px; cursor: pointer; line-height: 1;
-      color: var(--accent-yellow);
-      background: rgba(255,195,0,0.08);
-      border: 1px solid var(--accent-yellow);
-      border-radius: 6px;
-      padding: 2px 8px;
-      text-shadow: 0 0 8px rgba(255,195,0,0.6);
-    }
-    #chart-title {
-      font-family: 'Orbitron', sans-serif;
-      text-align: center; margin: 6px 0 8px 0; font-size: 18px;
-      color:#ffd666;
-    }
-    #sensor-chart {
-      display: block;
-      width: 100% !important;
-      height: clamp(180px, 45vh, 300px) !important;
-    }
-
     /* Responsive */
     @media (max-width: 768px){
       .gauges-grid { grid-template-columns: repeat(2, 1fr); }
@@ -395,16 +277,24 @@
           <div class="gauge-bar-labels"><span>0</span><span>5</span><span>10</span></div>
         </div>
 
-        <div class="gauge" data-key="OilPressure_bar" data-label="Oil Pressure">
+        <!-- bar4는 EOT_OUT -->
+        <div class="gauge" data-key="EOT_OUT" data-label="Oil Temp OUT">
           <div class="gauge-label">EOT OUT</div>
           <div class="gauge-bar-container"><div class="gauge-bar" id="bar4"></div></div>
-          <div class="gauge-bar-labels"><span>0</span><span>5</span><span>10</span></div>
+          <div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div>
         </div>
 
         <div class="gauge" data-key="TPS_percent" data-label="Throttle Position">
           <div class="gauge-label">TPS</div>
           <div class="gauge-bar-container"><div class="gauge-bar" id="bar5"></div></div>
           <div class="gauge-bar-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+        </div>
+
+        <!-- 신규: fuelPumpTemp -->
+        <div class="gauge" data-key="fuelPumpTemp" data-label="Fuel Pump Temp">
+          <div class="gauge-label">Fuel Pump Temp</div>
+          <div class="gauge-bar-container"><div class="gauge-bar" id="bar6"></div></div>
+          <div class="gauge-bar-labels"><span>0°</span><span>60°</span><span>100°</span></div>
         </div>
       </div>
 
@@ -428,48 +318,20 @@
         </div>
       </div>
 
-      <!-- All sensors table (cleaned) -->
-      <div class="all-data">
-        <div class="all-toolbar">
-          <div class="all-title">All Sensors</div>
-          <div class="legend">
-            <span class="chip warn"></span>Warn
-            <span class="chip crit" style="margin-left:10px;"></span>Critical
-          </div>
-          <input id="filter-input" class="toolbar-input" type="text" placeholder="키/값 필터…" />
-          <label class="toolbar-check"><input type="checkbox" id="toggle-hidden"> 숨김 키 보기</label>
-          <label class="toolbar-check"><input type="checkbox" id="toggle-pin" checked> 중요 키 우선</label>
-          <label class="toolbar-check"><input type="checkbox" id="toggle-freeze"> 테이블 동결</label>
-          <button id="copy-json" class="toolbar-btn" title="현재 스냅샷 JSON 복사">Copy JSON</button>
-          <button id="copy-csv" class="toolbar-btn" title="현재 테이블 CSV 복사">Copy CSV</button>
-        </div>
-        <div style="max-height: 380px; overflow:auto;">
-          <table>
-            <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
-            <tbody id="all-data-body"></tbody>
-          </table>
-        </div>
-      </div>
+      <!-- All sensors table: 외부 컴포넌트 -->
+      <div id="all-sensors-container" style="margin-top:16px;"></div>
     </section>
   </div>
 
-  <!-- Modal -->
-  <div class="modal-overlay" id="graph-modal" role="dialog" aria-modal="true" aria-labelledby="chart-title">
-    <div class="modal-content">
-      <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
-      <h3 id="chart-title">Sensor Graph</h3>
-      <canvas id="sensor-chart"></canvas>
-    </div>
-  </div>
-
-  <!-- Firebase -->
+  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
   <script>
     // Nav active
     document.addEventListener("DOMContentLoaded", () => {
       const links = document.querySelectorAll('nav a');
-      const current = window.location.pathname.split('/').pop();
+      const current = window.location.pathname.split('/').pop() || 'dashboard.html';
       links.forEach(a => { if (a.getAttribute('href').includes(current)) a.classList.add('active'); });
     });
 
@@ -485,16 +347,16 @@
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    const dataRef = db.ref("emu_realtime_data");
 
     // UI refs
     const sensorMap = [
-      { key: 'CLT_C', bar: 'bar0', max: 130, label: 'Coolant Temp' },
-      { key: 'OilTemp_C', bar: 'bar1', max: 130, label: 'Oil Temp' },
-      { key: 'IAT_C', bar: 'bar2', max: 130, label: 'Intake Air Temp' },
-      { key: 'FuelPressure_bar', bar: 'bar3', max: 10,  label: 'Fuel Pressure' },
-      { key: 'OilPressure_bar',  bar: 'bar4', max: 10,  label: 'Oil Pressure' },
-      { key: 'TPS_percent',      bar: 'bar5', max: 100, label: 'Throttle Position' }
+      { key: 'CLT_C',           bar: 'bar0', max: 130, label: 'Coolant Temp' },
+      { key: 'OilTemp_C',       bar: 'bar1', max: 130, label: 'Oil Temp IN' },
+      { key: 'IAT_C',           bar: 'bar2', max: 130, label: 'Intake Air Temp' },
+      { key: 'FuelPressure_bar',bar: 'bar3', max: 10,  label: 'Fuel Pressure' },
+      { key: 'EOT_OUT',         bar: 'bar4', max: 130, label: 'Oil Temp OUT' },
+      { key: 'TPS_percent',     bar: 'bar5', max: 100, label: 'Throttle Position' },
+      { key: 'fuelPumpTemp',    bar: 'bar6', max: 100, label: 'Fuel Pump Temp' }
     ];
 
     const ui = {
@@ -504,226 +366,15 @@
       rpmBar: document.getElementById("rpmBar"),
       speed: document.getElementById("speed"),
       gauges: document.querySelectorAll('.gauge'),
-      modal: document.getElementById('graph-modal'),
-      modalCloseBtn: document.getElementById('modal-close-btn'),
-      chartTitle: document.getElementById('chart-title'),
-      chartCtx: document.getElementById('sensor-chart').getContext('2d'),
       celIndicator: document.getElementById('cel-indicator'),
       battIndicator: document.getElementById('batt-indicator'),
-      // table
-      allDataBody: document.getElementById('all-data-body'),
-      filterInput: document.getElementById('filter-input'),
-      toggleHidden: document.getElementById('toggle-hidden'),
-      togglePin: document.getElementById('toggle-pin'),
-      toggleFreeze: document.getElementById('toggle-freeze'),
-      copyJsonBtn: document.getElementById('copy-json'),
-      copyCsvBtn: document.getElementById('copy-csv')
     };
 
-    // ====== 사용자 커스텀 ======
-    const BASE_HIDDEN = ['lat','lon','gps_fix','timestamp','_path','millis','time','session_id'];
-    const IMPORTANT_ORDER = ['RPM','VSS_kmh','Gear','CLT_C','OilTemp_C','IAT_C','FuelPressure_bar','OilPressure_bar','Batt_V','TPS_percent','CEL_Error'];
-
-    const RULES = {
-      CLT_C: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
-      clt_IN: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
-      clt_OUT: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
-      OilTemp_C: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
-      eotIn: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
-      eotOut: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
-      IAT: v => v>=70 ? 'warn' : null,
-      IAT_C: v => v>=70 ? 'warn' : null,
-      FuelPressure_bar: v => v<2.5 ? 'warn' : null,
-      OilPressure_bar: v => v<0.5 ? 'crit' : (v<1.0 ? 'warn' : null),
-      Batt_V: v => v<11.5 ? 'crit' : (v<12.0 ? 'warn' : null),
-      CEL_Error: v => Number(v)!==0 ? 'crit' : null
-    };
-
-    // 사용자 숨김(로컬 저장)
-    const HIDE_STORE_KEY = 'mf25_userHiddenKeys';
-    const userHidden = new Set(JSON.parse(localStorage.getItem(HIDE_STORE_KEY) || '[]'));
-    function saveHidden(){ localStorage.setItem(HIDE_STORE_KEY, JSON.stringify([...userHidden])); }
-
-    // ====== 차트(모달) ======
+    // History buffers for modal charts (kept minimal here)
     const MAX_DATA_POINTS = 50;
     const sensorHistory = {};
     sensorMap.forEach(s => { sensorHistory[s.key] = { labels: [], data: [] }; });
 
-    let sensorChart = new Chart(ui.chartCtx, {
-      type: 'line',
-      data: { labels: [], datasets: [{
-        label: 'Sensor Value',
-        data: [],
-        borderColor: '#ffc300',
-        backgroundColor: 'rgba(255,195,0,0.12)',
-        borderWidth: 2, tension: 0.3, fill: true, pointRadius: 0
-      }]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        animation: { duration: 200 },
-        scales: {
-          x: { ticks: { display: false }, grid: { color: '#222' } },
-          y: { beginAtZero: true, grid: { color: '#222' }, ticks: { color: '#e0e0e0' } }
-        },
-        plugins: { legend: { labels: { color: '#e0e0e0', font: { family: 'Roboto' } } } },
-        layout: { padding: { left: 2, right: 2, top: 0, bottom: 0 } }
-      }
-    });
-
-    function addDataToChart(chart, value){
-      if (value === undefined || value === null) return;
-      const now = new Date().toLocaleTimeString();
-      chart.data.labels.push(now);
-      chart.data.datasets[0].data.push(value);
-      if (chart.data.labels.length > 30){
-        chart.data.labels.shift();
-        chart.data.datasets[0].data.shift();
-      }
-      chart.update();
-    }
-
-    // ====== 테이블 로직 ======
-    let lastSnapshot = null;
-    const lastValues = new Map(); // value-change pulse만 유지
-
-    function classify(key, rawVal){
-      const v = Number(rawVal);
-      if (!isFinite(v)) return null;
-      const rule = RULES[key];
-      if (typeof rule === 'function') return rule(v);
-      if (/_C$/.test(key)) { if (v>=130) return 'crit'; if (v>=110) return 'warn'; }
-      return null;
-    }
-
-    function makeRowHtml(k, display, sev, isHidden) {
-      const btn = isHidden
-        ? `<button class="unhide-btn" data-action="unhide" data-key="${k}" title="보이기">+</button>`
-        : `<button class="hide-btn" data-action="hide" data-key="${k}" title="숨기기">−</button>`;
-      return `<tr data-key="${k}" data-val="${String(display)}" class="${sev?sev:''}">
-        <td>${btn}<span>${k}</span></td>
-        <td class="value">${display}</td>
-      </tr>`;
-    }
-
-    const rowsCache = []; // CSV 추출용
-    function renderAllSensorsTable(data){
-      const showHidden = ui.toggleHidden.checked;
-      const pinImportant = ui.togglePin.checked;
-
-      // build entries
-      const entries = [];
-      for (const k in data){
-        if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
-
-        const baseHidden = BASE_HIDDEN.includes(k);
-        const userHide = userHidden.has(k);
-        const shouldHide = (!showHidden) && (baseHidden || userHide);
-        if (shouldHide) continue;
-
-        const raw = data[k];
-        const sev = classify(k, raw);
-        const isNum = typeof raw === 'number';
-        const display = isNum && !Number.isInteger(raw) ? Number(raw.toFixed(3)) : raw;
-
-        entries.push({ key:k, display, sev, isHidden:(baseHidden || userHide) });
-      }
-
-      // sorting
-      if (pinImportant){
-        const idx = k => { const i = IMPORTANT_ORDER.indexOf(k); return i === -1 ? 999 : i; };
-        entries.sort((a,b)=> idx(a.key) - idx(b.key) || a.key.localeCompare(b.key));
-      } else {
-        entries.sort((a,b)=> a.key.localeCompare(b.key));
-      }
-
-      // render
-      let html = '';
-      rowsCache.length = 0;
-      entries.forEach(r => {
-        html += makeRowHtml(r.key, r.display, r.sev, r.isHidden && ui.toggleHidden.checked);
-        rowsCache.push({key:r.key, display:r.display});
-      });
-      ui.allDataBody.innerHTML = html;
-
-      // pulse on value change
-      [...ui.allDataBody.querySelectorAll('tr')].forEach(tr => {
-        const key = tr.getAttribute('data-key');
-        const cell = tr.querySelector('.value');
-        const rawStr = tr.getAttribute('data-val');
-        const currentVal = isNaN(Number(rawStr)) ? rawStr : Number(rawStr);
-        const had = lastValues.has(key);
-        const prevVal = lastValues.get(key);
-        const changed = had ? currentVal !== prevVal : false;
-        if (changed){
-          cell.classList.remove('pulse'); void cell.offsetWidth; cell.classList.add('pulse');
-          cell.title = `prev: ${prevVal}`;
-        }
-        lastValues.set(key, currentVal);
-      });
-    }
-
-    // delegate for hide/unhide buttons
-    ui.allDataBody.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-action]');
-      if (!btn) return;
-      const key = btn.getAttribute('data-key');
-      const action = btn.getAttribute('data-action');
-      if (!key) return;
-
-      if (action === 'hide') {
-        userHidden.add(key); saveHidden();
-      } else if (action === 'unhide') {
-        userHidden.delete(key); saveHidden();
-      }
-      if (lastSnapshot) renderAllSensorsTable(lastSnapshot);
-    });
-
-    // filter
-    ui.filterInput.addEventListener('input', () => {
-      const q = ui.filterInput.value.trim().toLowerCase();
-      const rows = ui.allDataBody.querySelectorAll('tr');
-      rows.forEach(r => {
-        const k = r.children[0].innerText.toLowerCase();
-        const d = r.children[1].innerText.toLowerCase(); // 값 컬럼 인덱스 조정
-        r.style.display = (k.includes(q) || d.includes(q)) ? '' : 'none';
-      });
-    });
-
-    // toggles (Δ 제거됨)
-    [ui.toggleHidden, ui.togglePin].forEach(el => {
-      el.addEventListener('change', () => { if (lastSnapshot) renderAllSensorsTable(lastSnapshot); });
-    });
-
-    // copy
-    ui.copyJsonBtn.addEventListener('click', async () => {
-      if (!lastSnapshot) return;
-      try{
-        await navigator.clipboard.writeText(JSON.stringify(lastSnapshot, null, 2));
-        ui.copyJsonBtn.textContent = 'Copied!';
-        setTimeout(() => ui.copyJsonBtn.textContent = 'Copy JSON', 900);
-      }catch(e){
-        ui.copyJsonBtn.textContent = 'Copy failed';
-        setTimeout(() => ui.copyJsonBtn.textContent = 'Copy JSON', 1200);
-      }
-    });
-    ui.copyCsvBtn.addEventListener('click', async () => {
-      const header = ['Parameter','Value'];
-      const lines = [header.join(',')];
-      rowsCache.forEach(r => {
-        const esc = s => String(s).replace(/"/g,'""');
-        lines.push([`"${esc(r.key)}"`,`"${esc(r.display)}"`].join(','));
-      });
-      try{
-        await navigator.clipboard.writeText(lines.join('\n'));
-        ui.copyCsvBtn.textContent = 'Copied!';
-        setTimeout(() => ui.copyCsvBtn.textContent = 'Copy CSV', 900);
-      }catch(e){
-        ui.copyCsvBtn.textContent = 'Copy failed';
-        setTimeout(() => ui.copyCsvBtn.textContent = 'Copy CSV', 1200);
-      }
-    });
-
-    // ====== 업데이트 루프 ======
     function update(data){
       if (!data) return;
 
@@ -759,7 +410,7 @@
       ui.celIndicator.classList.toggle('active', Number(data.CEL_Error ?? 0) !== 0);
       ui.battIndicator.classList.toggle('active', Number(data.Batt_V ?? 14) < 12.0);
 
-      // History buffers for modal
+      // history (optional)
       const now = new Date().toLocaleTimeString();
       sensorMap.forEach(s => {
         const v = data[s.key];
@@ -771,36 +422,41 @@
         }
       });
 
-      // Table
-      if (!ui.toggleFreeze.checked){
-        lastSnapshot = data;
-        renderAllSensorsTable(data);
-      }
+      // ▼ 공용 테이블 업데이트
+      if (window.allSensorsTable) window.allSensorsTable.update(data);
     }
 
-    // Open modal on gauge click
-    ui.gauges.forEach(g => {
-      g.addEventListener('click', () => {
-        const key = g.dataset.key;
-        const label = g.dataset.label;
-        const h = sensorHistory[key];
-        if (!h) return;
-        ui.chartTitle.textContent = `${label} History`;
-        sensorChart.data.labels = h.labels;
-        sensorChart.data.datasets[0].data = h.data;
-        sensorChart.data.datasets[0].label = label;
-        sensorChart.update();
-        ui.modal.style.display = 'flex';
-      });
-    });
-
-    // Close modal
-    ui.modalCloseBtn.addEventListener('click', () => ui.modal.style.display = 'none');
-    ui.modal.addEventListener('click', (e) => { if (e.target === ui.modal) ui.modal.style.display = 'none'; });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') ui.modal.style.display = 'none'; });
-
-    // Realtime
+    const dataRef = db.ref("emu_realtime_data");
     dataRef.on('value', (snap) => update(snap.val()));
+  </script>
+
+  <!-- 공용 센서 테이블 모듈 -->
+  <script type="module">
+    import { loadAllSensorsTable } from './sensors-table.js';
+
+    const RULES = {
+      CLT_C: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+      clt_IN: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+      clt_OUT: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+      OilTemp_C: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
+      EOT_OUT: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
+      IAT: v => v>=70 ? 'warn' : null,
+      IAT_C: v => v>=70 ? 'warn' : null,
+      FuelPressure_bar: v => v<2.5 ? 'warn' : null,
+      OilPressure_bar: v => v<0.5 ? 'crit' : (v<1.0 ? 'warn' : null),
+      Batt_V: v => v<11.5 ? 'crit' : (v<12.0 ? 'warn' : null),
+      fuelPumpTemp: v => v>=90 ? 'crit' : (v>=70 ? 'warn' : null),
+      CEL_Error: v => Number(v)!==0 ? 'crit' : null
+    };
+
+    (async () => {
+      window.allSensorsTable = await loadAllSensorsTable('all-sensors-container', {
+        baseHidden: ['lat','lon','gps_fix','timestamp','_path','millis','time','session_id'],
+        importantOrder: ['RPM','VSS_kmh','Gear','CLT_C','OilTemp_C','EOT_OUT','IAT_C','FuelPressure_bar','OilPressure_bar','Batt_V','TPS_percent','fuelPumpTemp','CEL_Error'],
+        rules: RULES,
+        localKey: 'mf25_userHiddenKeys'
+      });
+    })();
   </script>
 </body>
 </html>
