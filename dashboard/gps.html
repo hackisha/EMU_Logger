@@ -27,7 +27,6 @@
       --panel-border:#333;
       --panel-shadow: rgba(0,0,0,0.5);
     }
-
     *{ box-sizing:border-box; }
     body{
       margin:0;
@@ -40,7 +39,6 @@
       min-height:100vh;
       padding:10px;
     }
-
     .container{
       width:100%;
       max-width:1000px;
@@ -50,7 +48,6 @@
       padding:10px;
       box-shadow:0 0 20px var(--panel-shadow);
     }
-
     nav{
       display:flex;
       flex-wrap:wrap;
@@ -71,7 +68,6 @@
       border:1px solid var(--panel-border);
       padding:10px;
     }
-
     .speed-bar{
       display:flex; justify-content:center; gap:10px; align-items:baseline;
       background:#0b0b0b; border:1px solid var(--panel-border);
@@ -200,11 +196,11 @@
       links.forEach(a => { if (a.getAttribute('href').includes(current)) a.classList.add('active'); });
     })();
 
-    // Firebase
+    // ===== Firebase: config.py와 동일하게 =====
     const firebaseConfig = {
       apiKey: "AIzaSyA44pnRn5t073UuSOPw3mkVwjvCLP4ZzJU",
       authDomain: "emucanlogger.firebaseapp.com",
-      databaseURL: "https://emucanlogger-default-rtdb.firebaseio.com",
+      databaseURL: "https://emucanlogger-default-rtdb.firebaseio.com", // 끝에 슬래시 없음
       projectId: "emucanlogger",
       storageBucket: "emucanlogger.firebasestorage.app",
       messagingSenderId: "289716936070",
@@ -213,12 +209,22 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // Leaflet Map
+    // ===== 데이터 소스 경로 =====
+    const REALTIME_PATH = "emu_realtime_data"; // config.py LEGACY_REALTIME_KEY
+    const GPS_LOGS_PATH = "gps_logs";          // 시계열 로그(최신 1건 보조 사용)
+
+    // ===== 지도 준비 =====
     const map = L.map('map', { zoomControl: true }).setView([37.5665,126.9780], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19 }).addTo(map);
 
     let marker = null;
     let trackLine = L.polyline([], { color:'#ffc300', weight:4, opacity:0.9 }).addTo(map);
+
+    // ===== 유틸 =====
+    const toNum = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
 
     const TRACK_KEY = 'mf25_gps_track';
     function saveTrack(){
@@ -238,255 +244,262 @@
     })();
 
     const speedEl = document.getElementById('speedVal');
-    const altEl = document.getElementById('altVal');
-    const headEl = document.getElementById('headVal');
+    const altEl   = document.getElementById('altVal');
+    const headEl  = document.getElementById('headVal');
     const btnReset = document.getElementById('btnReset');
 
-    let lastLatLng = null;
-
-    const ref = db.ref("emu_realtime_data");
-    ref.on("value", snap => {
-      const d = snap.val();
-      if(!d) return;
-
-      if(d.lat!=null && d.lon!=null){
-        const lat = Number(d.lat), lon = Number(d.lon);
+    function render({lat, lon, spd, alt, hdg}) {
+      if (lat !== undefined && lon !== undefined) {
         const ll = [lat, lon];
-        if(!marker){
+        if (!marker) {
           marker = L.marker(ll).addTo(map);
           map.setView(ll, 17, { animate:false });
         } else {
           marker.setLatLng(ll);
         }
-        if(!lastLatLng || lastLatLng[0] !== lat || lastLatLng[1] !== lon){
+        const last = trackLine.getLatLngs().slice(-1)[0];
+        if (!last || last.lat !== lat || last.lng !== lon) {
           trackLine.addLatLng(ll);
           saveTrack();
-          lastLatLng = ll;
         }
       }
+      speedEl.textContent = spd !== undefined ? spd.toFixed(1) : "--.-";
+      altEl.textContent   = alt !== undefined ? `${alt.toFixed(1)} m` : "-- m";
+      headEl.textContent  = hdg !== undefined ? `${hdg.toFixed(0)}°`    : "--°";
+    }
 
-      const spd = Number(d.GPS_Speed_KPH ?? d.gps_speed ?? d.speed_kph ?? d.VSS_kmh);
-      const alt = Number(d.altitude ?? d.alt ?? d.gps_alt);
-      const hdg = Number(d.heading ?? d.course ?? d.bearing);
+    // ===== 데이터 구독: 1) emu_realtime_data(우선) 2) gps_logs(보조) =====
+    const refRealtime = db.ref(REALTIME_PATH);
+    const refGpsLogs  = db.ref(GPS_LOGS_PATH);
 
-      speedEl.textContent = isFinite(spd) ? spd.toFixed(1) : "--.-";
-      altEl.textContent   = isFinite(alt) ? `${alt.toFixed(1)} m` : "-- m";
-      headEl.textContent  = isFinite(hdg) ? `${hdg.toFixed(0)}°` : "--°";
+    let hadRealtimeFix = false;
+
+    // 1) 실시간(통합 노드)
+    refRealtime.on("value", snap => {
+      const d = snap.val();
+      if (!d) return;
+
+      const lat = toNum(d.lat ?? d.latitude);
+      const lon = toNum(d.lon ?? d.lng ?? d.longitude);
+      const spd = toNum(d.GPS_Speed_KPH ?? d.gps_speed ?? d.speed_kph ?? d.VSS_kmh);
+      const alt = toNum(d.altitude ?? d.alt ?? d.gps_alt);
+      const hdg = toNum(d.heading ?? d.course ?? d.bearing);
+
+      if (lat !== undefined && lon !== undefined) hadRealtimeFix = true;
+      render({lat, lon, spd, alt, hdg});
     });
 
+    // 2) gps_logs 최신 1건 (실시간이 없을 때만 반영)
+    refGpsLogs.orderByKey().limitToLast(1).on('value', snap => {
+      if (hadRealtimeFix || !snap.exists()) return;
+      let v; snap.forEach(ch => v = ch.val());
+      if (!v) return;
+      const lat = toNum(v.latitude);
+      const lon = toNum(v.longitude);
+      const spd = toNum(v.speed_kph);
+      render({lat, lon, spd});
+    });
+
+    // 경로 초기화
     btnReset.addEventListener('click', () => {
       trackLine.setLatLngs([]);
       localStorage.removeItem(TRACK_KEY);
     });
   </script>
 
-<!-- Three.js 모듈 -->
-<script type="module">
-  /* global firebase */
-  import * as THREE from 'https://esm.sh/three@0.159.0';
-  import { OrbitControls } from 'https://esm.sh/three@0.159.0/examples/jsm/controls/OrbitControls.js';
-  import { GLTFLoader } from 'https://esm.sh/three@0.159.0/examples/jsm/loaders/GLTFLoader.js';
+  <!-- Three.js 모듈 (가속도/자세) -->
+  <script type="module">
+    /* global firebase */
+    import * as THREE from 'https://esm.sh/three@0.159.0';
+    import { OrbitControls } from 'https://esm.sh/three@0.159.0/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader } from 'https://esm.sh/three@0.159.0/examples/jsm/loaders/GLTFLoader.js';
 
-  // ----- 기본 셋업 -----
-  const canvas = document.getElementById('threeCanvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-  camera.position.set(3.2, 2.0, 4.2);
+    // ----- 기본 셋업 -----
+    const canvas = document.getElementById('threeCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(3.2, 2.0, 4.2);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = 0.08;
-  controls.enablePan = false; controls.minDistance = 2; controls.maxDistance = 12;
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.08;
+    controls.enablePan = false; controls.minDistance = 2; controls.maxDistance = 12;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(5,10,7); scene.add(dir);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(5,10,7); scene.add(dir);
 
-  // 기본 바닥(프리셋이 있으므로 필요 시 숨김)
-  const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(20, 64),
-    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.95, metalness: 0.0 })
-  );
-  ground.rotateX(-Math.PI/2); ground.position.y = -0.01; scene.add(ground);
-
-  // ----- 차량 모델 -----
-  let car = new THREE.Group();
-  const loader = new GLTFLoader();
-  loader.load('./car.glb', (gltf)=>{
-    car = gltf.scene;
-
-    // 스케일 정규화
-    const box0 = new THREE.Box3().setFromObject(car);
-    const size0 = new THREE.Vector3(); box0.getSize(size0);
-    const maxDim = Math.max(size0.x, size0.y, size0.z) || 1;
-    const scale = 2.0 / maxDim;
-    car.scale.setScalar(scale);
-
-    // 중심 원점
-    const box1 = new THREE.Box3().setFromObject(car);
-    const center = new THREE.Vector3(); box1.getCenter(center);
-    car.position.sub(center);
-
-    // 바닥에 올리기
-    const box2 = new THREE.Box3().setFromObject(car);
-    const raise = -box2.min.y + 0.02;
-    car.position.y += raise;
-
-    scene.add(car);
-  }, undefined, (err)=>{
-    console.warn('car.glb 로드 실패:', err);
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(2,0.6,4),
-      new THREE.MeshStandardMaterial({ color: 0x2266ff, metalness:0.2, roughness:0.6 })
+    // 바닥
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(20, 64),
+      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.95, metalness: 0.0 })
     );
-    mesh.position.y = 0.3;
-    car.add(mesh);
-    scene.add(car);
-  });
+    ground.rotateX(-Math.PI/2); ground.position.y = -0.01; scene.add(ground);
 
-  // ----- 배경 프리셋: 서킷만 사용 -----
-  let envGroup = new THREE.Group();
-  scene.add(envGroup);
+    // 차량 모델
+    let car = new THREE.Group();
+    const loader = new GLTFLoader();
+    loader.load('./car.glb', (gltf)=>{
+      car = gltf.scene;
 
-  function clearEnv(){
-    envGroup.children.forEach(ch => {
-      ch.traverse?.(obj => {
-        obj.geometry?.dispose?.();
-        if (obj.material){
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose?.());
-          else obj.material.dispose?.();
-        }
-      });
+      // 스케일 정규화
+      const box0 = new THREE.Box3().setFromObject(car);
+      const size0 = new THREE.Vector3(); box0.getSize(size0);
+      const maxDim = Math.max(size0.x, size0.y, size0.z) || 1;
+      const scale = 2.0 / maxDim;
+      car.scale.setScalar(scale);
+
+      // 중심 원점
+      const box1 = new THREE.Box3().setFromObject(car);
+      const center = new THREE.Vector3(); box1.getCenter(center);
+      car.position.sub(center);
+
+      // 바닥에 올리기
+      const box2 = new THREE.Box3().setFromObject(car);
+      const raise = -box2.min.y + 0.02;
+      car.position.y += raise;
+
+      scene.add(car);
+    }, undefined, (err)=>{
+      console.warn('car.glb 로드 실패:', err);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2,0.6,4),
+        new THREE.MeshStandardMaterial({ color: 0x2266ff, metalness:0.2, roughness:0.6 })
+      );
+      mesh.position.y = 0.3;
+      car.add(mesh);
+      scene.add(car);
     });
-    scene.remove(envGroup);
-    envGroup = new THREE.Group();
+
+    // 환경(서킷)
+    let envGroup = new THREE.Group();
     scene.add(envGroup);
-  }
 
-  function bumpCarIfNeeded(){
-    if (!car) return;
-    const box = new THREE.Box3().setFromObject(car);
-    const dy = -box.min.y + 0.02;
-    if (isFinite(dy) && dy > 0) car.position.y += dy;
-  }
-
-  function setCircuitEnv(){
-    clearEnv();
-    renderer.setClearColor(0x060606, 1);
-    ground.visible = false;
-
-    // 아스팔트 평면
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(120, 120),
-      new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.95, metalness: 0.0 })
-    );
-    plane.rotation.x = -Math.PI/2;
-    envGroup.add(plane);
-
-    // 트랙 그리드
-    const grid = new THREE.GridHelper(120, 60, 0x333333, 0x242424);
-    grid.position.y = 0.01;
-    envGroup.add(grid);
-
-    // 센터 라인
-    const path = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-40, 0.02, 0),
-      new THREE.Vector3( 40, 0.02, 0)
-    ]);
-    envGroup.add(new THREE.Line(path, new THREE.LineBasicMaterial({ color: 0xffc300 })));
-
-    // 외곽 윤곽선(대쉬)
-    const outlinePts = [[-45,-18],[45,-18],[45,18],[-45,18]].map(([x,z])=>new THREE.Vector3(x,0.02,z));
-    const outlineGeo = new THREE.BufferGeometry().setFromPoints([...outlinePts, outlinePts[0]]);
-    const outline = new THREE.Line(
-      outlineGeo,
-      new THREE.LineDashedMaterial({ color: 0x888888, dashSize: 1.2, gapSize: 0.6 })
-    );
-    outline.computeLineDistances();
-    envGroup.add(outline);
-
-    bumpCarIfNeeded();
-  }
-
-  // 초기 배경: 서킷으로 고정
-  setCircuitEnv();
-
-  // ----- 리사이즈 -----
-  function resize(){
-    const {width:w, height:h} = canvas.getBoundingClientRect();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(w, h, false);
-    camera.aspect = w/h; camera.updateProjectionMatrix();
-  }
-  window.addEventListener('resize', resize);
-  resize();
-
-  // ----- HUD refs -----
-  const axEl = document.getElementById('axVal');
-  const ayEl = document.getElementById('ayVal');
-  const azEl = document.getElementById('azVal');
-  const pitchEl = document.getElementById('pitchVal');
-  const rollEl  = document.getElementById('rollVal');
-
-  // ----- 가속도 스무딩 & 자세 계산 -----
-  let accel = { ax: 0, ay: 0, az: 1 };
-  const smoothAlpha = 0.12;
-  const smoothUpdate = (k, t)=> accel[k] = accel[k] + (t - accel[k]) * smoothAlpha;
-
-  let targetPitch = 0, targetRoll = 0;
-  function updateModelRotation(){
-    car.rotation.x += (targetPitch - car.rotation.x) * 0.15;
-    car.rotation.z += (targetRoll  - car.rotation.z) * 0.15;
-  }
-  const computeAngles = (ax, ay, az)=> ({
-    pitch: Math.atan2(ax, Math.hypot(ay, az)),
-    roll : Math.atan2(ay, az)
-  });
-
-  // ----- Firebase (가속도) -----
-  const db2  = window.firebase.database();
-  const ref2 = db2.ref("emu_realtime_data");
-  ref2.on("value", snap => {
-    const d = snap.val(); if(!d) return;
-
-    const keys = [
-      {x:'ax_g', y:'ay_g', z:'az_g'},
-      {x:'ax',   y:'ay',   z:'az'},
-      {x:'AccelX', y:'AccelY', z:'AccelZ'},
-      {x:'acc_x',  y:'acc_y',  z:'acc_z'}
-    ];
-    let ax, ay, az;
-    for(const k of keys){
-      if(d[k.x]!==undefined && d[k.y]!==undefined && d[k.z]!==undefined){
-        ax = Number(d[k.x]); ay = Number(d[k.y]); az = Number(d[k.z]); break;
-      }
+    function clearEnv(){
+      envGroup.children.forEach(ch => {
+        ch.traverse?.(o => {
+          o.geometry?.dispose?.();
+          if (o.material){
+            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
+            else o.material.dispose?.();
+          }
+        });
+      });
+      scene.remove(envGroup);
+      envGroup = new THREE.Group();
+      scene.add(envGroup);
     }
-    if(ax===undefined) return;
 
-    const toG = v => (!isFinite(v)? null : (Math.abs(v)>3.2 ? v/9.80665 : v));
-    ax = toG(ax); ay = toG(ay); az = toG(az);
-    if(ax==null || ay==null || az==null) return;
+    function bumpCarIfNeeded(){
+      if (!car) return;
+      const box = new THREE.Box3().setFromObject(car);
+      const dy = -box.min.y + 0.02;
+      if (isFinite(dy) && dy > 0) car.position.y += dy;
+    }
 
-    smoothUpdate('ax', ax); smoothUpdate('ay', ay); smoothUpdate('az', az);
+    function setCircuitEnv(){
+      clearEnv();
+      renderer.setClearColor(0x060606, 1);
+      ground.visible = false;
 
-    axEl.textContent = accel.ax.toFixed(3);
-    ayEl.textContent = accel.ay.toFixed(3);
-    azEl.textContent = accel.az.toFixed(3);
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(120, 120),
+        new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.95, metalness: 0.0 })
+      );
+      plane.rotation.x = -Math.PI/2; envGroup.add(plane);
 
-    const {pitch, roll} = computeAngles(accel.ax, accel.ay, accel.az);
-    targetPitch = pitch;
-    targetRoll  = -roll;
+      const grid = new THREE.GridHelper(120, 60, 0x333333, 0x242424);
+      grid.position.y = 0.01; envGroup.add(grid);
 
-    pitchEl.textContent = (pitch*180/Math.PI).toFixed(1);
-    rollEl.textContent  = (roll *180/Math.PI).toFixed(1);
-  });
+      const path = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-40, 0.02, 0),
+        new THREE.Vector3( 40, 0.02, 0)
+      ]);
+      envGroup.add(new THREE.Line(path, new THREE.LineBasicMaterial({ color: 0xffc300 })));
 
-  // ----- 루프 -----
-  (function animate(){
-    requestAnimationFrame(animate);
-    updateModelRotation();
-    renderer.render(scene, camera);
-  })();
-</script>
+      const outlinePts = [[-45,-18],[45,-18],[45,18],[-45,18]].map(([x,z])=>new THREE.Vector3(x,0.02,z));
+      const outlineGeo = new THREE.BufferGeometry().setFromPoints([...outlinePts, outlinePts[0]]);
+      const outline = new THREE.Line(
+        outlineGeo,
+        new THREE.LineDashedMaterial({ color: 0x888888, dashSize: 1.2, gapSize: 0.6 })
+      );
+      outline.computeLineDistances();
+      envGroup.add(outline);
 
+      bumpCarIfNeeded();
+    }
+    setCircuitEnv();
+
+    function resize(){
+      const {width:w, height:h} = canvas.getBoundingClientRect();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(w, h, false);
+      camera.aspect = w/h; camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const axEl = document.getElementById('axVal');
+    const ayEl = document.getElementById('ayVal');
+    const azEl = document.getElementById('azVal');
+    const pitchEl = document.getElementById('pitchVal');
+    const rollEl  = document.getElementById('rollVal');
+
+    let accel = { ax: 0, ay: 0, az: 1 };
+    const smoothAlpha = 0.12;
+    const smoothUpdate = (k, t)=> accel[k] = accel[k] + (t - accel[k]) * smoothAlpha;
+
+    let targetPitch = 0, targetRoll = 0;
+    function updateModelRotation(){
+      car.rotation.x += (targetPitch - car.rotation.x) * 0.15;
+      car.rotation.z += (targetRoll  - car.rotation.z) * 0.15;
+    }
+    const computeAngles = (ax, ay, az)=> ({
+      pitch: Math.atan2(ax, Math.hypot(ay, az)),
+      roll : Math.atan2(ay, az)
+    });
+
+    // 가속도는 emu_realtime_data에서만 구독(병합 노드)
+    const accRef = window.firebase.database().ref("emu_realtime_data");
+    accRef.on("value", snap => {
+      const d = snap.val(); if(!d) return;
+
+      const candidates = [
+        {x:'ax_g', y:'ay_g', z:'az_g'},
+        {x:'ax',   y:'ay',   z:'az'},
+        {x:'AccelX', y:'AccelY', z:'AccelZ'},
+        {x:'acc_x',  y:'acc_y',  z:'acc_z'}
+      ];
+      let ax, ay, az;
+      for(const k of candidates){
+        if(d[k.x]!==undefined && d[k.y]!==undefined && d[k.z]!==undefined){
+          ax = Number(d[k.x]); ay = Number(d[k.y]); az = Number(d[k.z]); break;
+        }
+      }
+      if(ax===undefined) return;
+
+      const toG = v => (!Number.isFinite(Number(v)) ? null : (Math.abs(Number(v))>3.2 ? Number(v)/9.80665 : Number(v)));
+      ax = toG(ax); ay = toG(ay); az = toG(az);
+      if(ax==null || ay==null || az==null) return;
+
+      smoothUpdate('ax', ax); smoothUpdate('ay', ay); smoothUpdate('az', az);
+
+      axEl.textContent = accel.ax.toFixed(3);
+      ayEl.textContent = accel.ay.toFixed(3);
+      azEl.textContent = accel.az.toFixed(3);
+
+      const {pitch, roll} = computeAngles(accel.ax, accel.ay, accel.az);
+      targetPitch = pitch;
+      targetRoll  = -roll;
+
+      pitchEl.textContent = (pitch*180/Math.PI).toFixed(1);
+      rollEl.textContent  = (roll *180/Math.PI).toFixed(1);
+    });
+
+    (function animate(){
+      requestAnimationFrame(animate);
+      updateModelRotation();
+      renderer.render(scene, camera);
+    })();
+  </script>
 </body>
 </html>
