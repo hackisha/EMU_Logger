@@ -106,78 +106,6 @@
       border:1px solid #1f1f1f;
     }
 
-    /* All sensors table */
-    .all-data {
-      margin-top: 16px;
-      background: #0c0c0c;
-      border: 1px solid var(--panel-border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .all-toolbar{
-      display:flex; gap:10px; align-items:center;
-      padding:10px; border-bottom:1px solid #222; background:#191919;
-      flex-wrap: wrap;
-    }
-    .all-title{ font-family:'Orbitron',sans-serif; font-weight:700; margin-right:auto; }
-    .legend { display:flex; gap:10px; align-items:center; font-size:12px; color:#bbb; }
-    .chip { width:14px; height:14px; border-radius:3px; display:inline-block; margin-right:6px; }
-    .chip.warn { background: #ff9f1a; }
-    .chip.crit { background: #e74c3c; }
-    .toolbar-input{
-      background:#101010; border:1px solid #333; color:var(--text-color);
-      border-radius:6px; padding:8px 10px; min-width:200px; outline:none;
-    }
-    .toolbar-btn, .toolbar-check{
-      background:#111; border:1px solid #444; color:var(--text-color);
-      border-radius:6px; padding:8px 12px; cursor:pointer; transition:filter .15s ease;
-    }
-    .toolbar-check{
-      display:flex; align-items:center; gap:6px; padding:6px 10px; user-select:none;
-    }
-    .toolbar-btn:hover{ filter:brightness(1.15); }
-
-    .all-data table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    .all-data thead th {
-      position:sticky; top:0;
-      background: #222;
-      color: var(--text-color);
-      font-family: 'Orbitron', sans-serif;
-      padding: 10px;
-      text-align: left;
-      border-bottom: 1px solid #333;
-      z-index:1;
-    }
-    .all-data tbody td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #1e1e1e;
-      white-space: nowrap;
-      vertical-align: middle;
-    }
-    .all-data tbody tr:nth-child(odd) { background: #111; }
-    .all-data tbody tr:nth-child(even) { background: #151515; }
-    .all-data tbody td.value { color: var(--accent-yellow); font-weight: 700; }
-
-    /* 숨기기 버튼 */
-    .hide-btn, .unhide-btn{
-      display:inline-flex; align-items:center; justify-content:center;
-      width:22px; height:22px; border-radius:6px; margin-right:8px;
-      font-weight:700; line-height:1; cursor:pointer; border:1px solid #444;
-      background:#0e0e0e; color:#bbb;
-    }
-    .hide-btn:hover{ filter:brightness(1.2); }
-    .unhide-btn{ color:#ddd; }
-
-    /* highlight */
-    .warn  { background: rgba(255,159,26,0.18) !important; color:#ffe9cc; }
-    .crit  { background: rgba(231,76,60,0.28) !important; color:#ffecec; }
-    .pulse { animation: pulse-bg 1.2s ease-out; }
-    @keyframes pulse-bg {
-      0%   { box-shadow: inset 0 0 0px rgba(255,195,0,0); }
-      10%  { box-shadow: inset 0 0 12px rgba(255,195,0,.45); }
-      100% { box-shadow: inset 0 0 0px rgba(255,195,0,0); }
-    }
-
     @media (max-width:768px){ .chart-wrap{ height:180px; } }
   </style>
 </head>
@@ -217,29 +145,8 @@
       </div>
     </section>
 
-    <!-- All sensors table (no scroll: shows full list) -->
-    <div class="all-data">
-      <div class="all-toolbar">
-        <div class="all-title">All Sensors</div>
-        <div class="legend">
-          <span class="chip warn"></span>Warn
-          <span class="chip crit" style="margin-left:10px;"></span>Critical
-        </div>
-        <input id="filter-input" class="toolbar-input" type="text" placeholder="키/값 필터…" />
-        <label class="toolbar-check"><input type="checkbox" id="toggle-hidden"> 숨김 키 보기</label>
-        <label class="toolbar-check"><input type="checkbox" id="toggle-pin" checked> 중요 키 우선</label>
-        <label class="toolbar-check"><input type="checkbox" id="toggle-freeze"> 테이블 동결</label>
-        <button id="copy-json" class="toolbar-btn" title="현재 스냅샷 JSON 복사">Copy JSON</button>
-        <button id="copy-csv" class="toolbar-btn" title="현재 테이블 CSV 복사">Copy CSV</button>
-      </div>
-      <!-- ↓↓↓ 여기 스타일 래퍼의 max-height/overflow 제거 -->
-      <div>
-        <table>
-          <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
-          <tbody id="all-data-body"></tbody>
-        </table>
-      </div>
-    </div>
+    <!-- All sensors table: 외부 컴포넌트 -->
+    <div id="all-sensors-container" style="margin-top:16px;"></div>
   </div>
 
   <script>
@@ -284,20 +191,10 @@
           maintainAspectRatio: false,
           animation: false,
           scales: {
-            x: {
-              ticks: { color: '#b5c8ff', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 },
-              grid: { color: '#222' }
-            },
-            y: {
-              ticks: { color: '#b5c8ff' },
-              grid: { color: '#222' }
-            }
+            x: { ticks: { color: '#b5c8ff', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }, grid: { color: '#222' } },
+            y: { ticks: { color: '#b5c8ff' }, grid: { color: '#222' } }
           },
-          plugins: {
-            legend: {
-              labels: { color: '#e0e0e0', font: { size: 12, family: 'Roboto' } }
-            }
-          }
+          plugins: { legend: { labels: { color: '#e0e0e0', font: { size: 12, family: 'Roboto' } } } }
         }
       });
     }
@@ -323,9 +220,25 @@
       chart.update();
     }
 
-    // ====== Table (cleaned like dashboard) ======
-    const BASE_HIDDEN = ['lat','lon','gps_fix','timestamp','_path','millis','time','session_id'];
-    const IMPORTANT_ORDER = ['RPM','VSS_kmh','Gear','CLT_C','OilTemp_C','IAT_C','FuelPressure_bar','OilPressure_bar','Batt_V','TPS_percent','CEL_Error'];
+    function onData(data){
+      if (!data) return;
+      addData(charts.clt_IN,  data.clt_IN);
+      addData(charts.clt_OUT, data.clt_OUT);
+      addData(charts.eotIn,   data.eotIn);
+      addData(charts.eotOut,  data.eotOut);
+      addData(charts.tps,     data.TPS_percent);
+      addData(charts.IAT,     data.IAT);
+
+      if (window.allSensorsTable) window.allSensorsTable.update(data);
+    }
+
+    const dataRef = db.ref("emu_realtime_data");
+    dataRef.on("value", (snapshot) => onData(snapshot.val()));
+  </script>
+
+  <!-- 공용 센서 테이블 모듈 -->
+  <script type="module">
+    import { loadAllSensorsTable } from './sensors-table.js';
 
     const RULES = {
       CLT_C: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
@@ -339,176 +252,18 @@
       FuelPressure_bar: v => v<2.5 ? 'warn' : null,
       OilPressure_bar: v => v<0.5 ? 'crit' : (v<1.0 ? 'warn' : null),
       Batt_V: v => v<11.5 ? 'crit' : (v<12.0 ? 'warn' : null),
+      fuelPumpTemp: v => v>=90 ? 'crit' : (v>=70 ? 'warn' : null),
       CEL_Error: v => Number(v)!==0 ? 'crit' : null
     };
 
-    const HIDE_STORE_KEY = 'mf25_userHiddenKeys';
-    const userHidden = new Set(JSON.parse(localStorage.getItem(HIDE_STORE_KEY) || '[]'));
-    function saveHidden(){ localStorage.setItem(HIDE_STORE_KEY, JSON.stringify([...userHidden])); }
-
-    const ui = {
-      allDataBody: document.getElementById('all-data-body'),
-      filterInput: document.getElementById('filter-input'),
-      toggleHidden: document.getElementById('toggle-hidden'),
-      togglePin: document.getElementById('toggle-pin'),
-      toggleFreeze: document.getElementById('toggle-freeze'),
-      copyJsonBtn: document.getElementById('copy-json'),
-      copyCsvBtn: document.getElementById('copy-csv')
-    };
-
-    let lastSnapshot = null;
-    const lastValues = new Map(); // pulse만 유지
-    const rowsCache = [];
-
-    function classify(k, raw){
-      const v = Number(raw);
-      if (!isFinite(v)) return null;
-      const r = RULES[k];
-      if (typeof r === 'function') return r(v);
-      if (/_C$/.test(k)) { if (v>=130) return 'crit'; if (v>=110) return 'warn'; }
-      return null;
-    }
-
-    function makeRowHtml(k, display, sev, isHidden) {
-      const btn = isHidden
-        ? `<button class="unhide-btn" data-action="unhide" data-key="${k}" title="보이기">+</button>`
-        : `<button class="hide-btn" data-action="hide" data-key="${k}" title="숨기기">−</button>`;
-      return `<tr data-key="${k}" data-val="${String(display)}" class="${sev?sev:''}">
-        <td>${btn}<span>${k}</span></td>
-        <td class="value">${display}</td>
-      </tr>`;
-    }
-
-    function renderAllSensorsTable(data){
-      const showHidden = ui.toggleHidden.checked;
-      const pinImportant = ui.togglePin.checked;
-
-      const entries = [];
-      for (const k in data){
-        if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
-
-        const baseHidden = BASE_HIDDEN.includes(k);
-        const userHide = userHidden.has(k);
-        const shouldHide = (!showHidden) && (baseHidden || userHide);
-        if (shouldHide) continue;
-
-        const raw = data[k];
-        const isNum = typeof raw === 'number';
-        const display = isNum && !Number.isInteger(raw) ? Number(raw.toFixed(3)) : raw;
-        const sev = classify(k, raw);
-
-        entries.push({ key:k, display, sev, isHidden:(baseHidden || userHide) });
-      }
-
-      if (pinImportant){
-        const idx = k => { const i = IMPORTANT_ORDER.indexOf(k); return i === -1 ? 999 : i; };
-        entries.sort((a,b)=> idx(a.key) - idx(b.key) || a.key.localeCompare(b.key));
-      } else {
-        entries.sort((a,b)=> a.key.localeCompare(b.key));
-      }
-
-      let html = '';
-      rowsCache.length = 0;
-      entries.forEach(r => {
-        html += makeRowHtml(r.key, r.display, r.sev, r.isHidden && ui.toggleHidden.checked);
-        rowsCache.push({key:r.key, display:r.display});
+    (async () => {
+      window.allSensorsTable = await loadAllSensorsTable('all-sensors-container', {
+        baseHidden: ['lat','lon','gps_fix','timestamp','_path','millis','time','session_id'],
+        importantOrder: ['RPM','VSS_kmh','Gear','CLT_C','OilTemp_C','EOT_OUT','IAT_C','FuelPressure_bar','OilPressure_bar','Batt_V','TPS_percent','fuelPumpTemp','CEL_Error'],
+        rules: RULES,
+        localKey: 'mf25_userHiddenKeys'
       });
-      ui.allDataBody.innerHTML = html;
-
-      // pulse on change
-      [...ui.allDataBody.querySelectorAll('tr')].forEach(tr => {
-        const key = tr.getAttribute('data-key');
-        const cell = tr.querySelector('.value');
-        const rawStr = tr.getAttribute('data-val');
-        const currentVal = isNaN(Number(rawStr)) ? rawStr : Number(rawStr);
-        const had = lastValues.has(key);
-        const prevVal = lastValues.get(key);
-        const changed = had ? currentVal !== prevVal : false;
-        if (changed){
-          cell.classList.remove('pulse'); void cell.offsetWidth; cell.classList.add('pulse');
-          cell.title = `prev: ${prevVal}`;
-        }
-        lastValues.set(key, currentVal);
-      });
-    }
-
-    // delegate hide/unhide
-    ui.allDataBody.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-action]');
-      if (!btn) return;
-      const key = btn.getAttribute('data-key');
-      const action = btn.getAttribute('data-action');
-      if (!key) return;
-      if (action === 'hide') { userHidden.add(key); saveHidden(); }
-      else if (action === 'unhide') { userHidden.delete(key); saveHidden(); }
-      if (lastSnapshot) renderAllSensorsTable(lastSnapshot);
-    });
-
-    // filter
-    ui.filterInput.addEventListener('input', () => {
-      const q = ui.filterInput.value.trim().toLowerCase();
-      const rows = ui.allDataBody.querySelectorAll('tr');
-      rows.forEach(r => {
-        const k = r.children[0].innerText.toLowerCase();
-        const d = r.children[1].innerText.toLowerCase(); // Value 열
-        r.style.display = (k.includes(q) || d.includes(q)) ? '' : 'none';
-      });
-    });
-
-    // toggles
-    [ui.toggleHidden, ui.togglePin].forEach(el => {
-      el.addEventListener('change', () => { if (lastSnapshot) renderAllSensorsTable(lastSnapshot); });
-    });
-
-    // copy buttons
-    ui.copyJsonBtn.addEventListener('click', async () => {
-      if (!lastSnapshot) return;
-      try{
-        await navigator.clipboard.writeText(JSON.stringify(lastSnapshot, null, 2));
-        ui.copyJsonBtn.textContent = 'Copied!';
-        setTimeout(() => ui.copyJsonBtn.textContent = 'Copy JSON', 900);
-      }catch(e){
-        ui.copyJsonBtn.textContent = 'Copy failed';
-        setTimeout(() => ui.copyJsonBtn.textContent = 'Copy JSON', 1200);
-      }
-    });
-    ui.copyCsvBtn.addEventListener('click', async () => {
-      const header = ['Parameter','Value'];
-      const lines = [header.join(',')];
-      rowsCache.forEach(r => {
-        const esc = s => String(s).replace(/"/g,'""');
-        lines.push([`"${esc(r.key)}"`,`"${esc(r.display)}"`].join(','));
-      });
-      try{
-        await navigator.clipboard.writeText(lines.join('\n'));
-        ui.copyCsvBtn.textContent = 'Copied!';
-        setTimeout(() => ui.copyCsvBtn.textContent = 'Copy CSV', 900);
-      }catch(e){
-        ui.copyCsvBtn.textContent = 'Copy failed';
-        setTimeout(() => ui.copyCsvBtn.textContent = 'Copy CSV', 1200);
-      }
-    });
-
-    // ====== Realtime ======
-    const dataRef = db.ref("emu_realtime_data");
-    dataRef.on("value", (snapshot) => {
-      const data = snapshot.val();
-      if (!data) return;
-
-      // charts
-      addData(charts.clt_IN,  data.clt_IN);
-      addData(charts.clt_OUT, data.clt_OUT);
-      addData(charts.eotIn,   data.eotIn);
-      addData(charts.eotOut,  data.eotOut);
-      addData(charts.tps,     data.TPS_percent);
-      addData(charts.IAT,     data.IAT);
-
-      // table
-      if (!ui.toggleFreeze.checked) {
-        lastSnapshot = data;
-        renderAllSensorsTable(data);
-      }
-    });
+    })();
   </script>
 </body>
 </html>
