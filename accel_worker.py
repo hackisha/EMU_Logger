@@ -66,14 +66,14 @@ class AccelWorker:
         try:
             data = self.bus.read_i2c_block_data(self.addr, REG_DATAX0, 6)
             # 리틀엔디언 16비트 부호값
-            x = self._to_int16(data[1] << 8 | data[0])
-            y = self._to_int16(data[3] << 8 | data[2])
+            y = self._to_int16(data[1] << 8 | data[0])
+            x = self._to_int16(data[3] << 8 | data[2])
             z = self._to_int16(data[5] << 8 | data[4])
 
             # Full-Resolution: scale ≈ 3.9 mg/LSB → 0.0039 g/LSB
             lsb_g = 0.0039
             ax_g = x * lsb_g
-            ay_g = y * lsb_g
+            ay_g = -y * lsb_g
             az_g = z * lsb_g
 
             out = {"ax_g": ax_g, "ay_g": ay_g, "az_g": az_g}
