@@ -9,8 +9,6 @@ import threading
 from datetime import datetime
 
 # --- 설정 파일 및 모듈 임포트 ---
-# 실제 환경에서는 아래 .config가 정상적으로 동작해야 합니다.
-# 여기서는 예시를 위해 가상 클래스를 만듭니다.
 try:
     from .config import (
         LOG_DIR, SERIAL_PORT, BAUD_RATE,
@@ -242,12 +240,12 @@ def run():
             gpsw.read_once()
             accw.read_once()
 
-            # 3. [성능 개선] 주기적인 Firebase 업데이트 (0.2초마다)
+            #주기적인 Firebase 업데이트 (0.2초마다)
             if now - last_firebase_update_ts > 0.2:
                 patch_legacy_realtime(fb)
                 last_firebase_update_ts = now
 
-            # 4. [성능 개선] 주기적인 CSV 파일 flush (0.5초마다)
+            # CSV 파일 flush (0.5초마다)
             if logging_active and csv_file and now - last_csv_flush_ts > 0.5:
                 csv_file.flush()
                 last_csv_flush_ts = now
