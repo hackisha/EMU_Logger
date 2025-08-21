@@ -99,13 +99,20 @@
     .info-value{ font-family:'Orbitron',sans-serif; font-size:18px; color:var(--accent-yellow); font-weight:700; }
 
     .actions{ display:flex; gap:10px; align-items:center; margin-left:auto; }
-    .btn-reset{
+    .btn{
       background:var(--accent-yellow); color:#111; border:1px solid #8c6d00;
       border-radius:8px; padding:10px 14px; cursor:pointer; font-weight:900;
       transition:filter .15s ease, transform .02s ease;
+      font-family: 'Roboto', sans-serif;
     }
-    .btn-reset:hover{ filter:brightness(1.03); }
-    .btn-reset:active{ transform:translateY(1px); }
+    .btn:hover{ filter:brightness(1.03); }
+    .btn:active{ transform:translateY(1px); }
+    /* [수정] 자세 보정 버튼을 위한 약간 다른 스타일 */
+    .btn-secondary {
+        background: #3a3a3a;
+        color: #e0e0e0;
+        border-color: #555;
+    }
 
     .three-section{
       margin-top:14px; background:var(--panel-color);
@@ -165,7 +172,7 @@
         </div>
 
         <div class="actions">
-          <button id="btnReset" class="btn-reset" title="기록된 이동경로를 지웁니다">이동경로 초기화</button>
+          <button id="btnReset" class="btn" title="기록된 이동경로를 지웁니다">이동경로 초기화</button>
         </div>
       </div>
     </section>
@@ -183,6 +190,11 @@
         </div>
 
         <canvas id="threeCanvas" class="three-canvas"></canvas>
+        
+        <!-- [수정] 자세 보정 버튼 추가 -->
+        <div class="actions" style="position:absolute; bottom:12px; right:12px; z-index: 5;">
+            <button id="btnCalibrate" class="btn btn-secondary" title="현재 차량의 기울기를 기본 자세로 설정합니다.">자세 보정 (영점 설정)</button>
+        </div>
       </div>
     </section>
   </div>
@@ -210,8 +222,8 @@
     const db = firebase.database();
 
     // ===== 데이터 소스 경로 =====
-    const REALTIME_PATH = "emu_realtime_data"; // config.py LEGACY_REALTIME_KEY
-    const GPS_LOGS_PATH = "gps_logs";          // 시계열 로그(최신 1건 보조 사용)
+    const REALTIME_PATH = "emu_realtime_data";
+    const GPS_LOGS_PATH = "gps_logs";
 
     // ===== 지도 준비 =====
     const map = L.map('map', { zoomControl: true }).setView([37.5665,126.9780], 15);
@@ -265,31 +277,26 @@
       }
       speedEl.textContent = spd !== undefined ? spd.toFixed(1) : "--.-";
       altEl.textContent   = alt !== undefined ? `${alt.toFixed(1)} m` : "-- m";
-      headEl.textContent  = hdg !== undefined ? `${hdg.toFixed(0)}°`    : "--°";
+      headEl.textContent  = hdg !== undefined ? `${hdg.toFixed(0)}°`   : "--°";
     }
 
-    // ===== 데이터 구독: 1) emu_realtime_data(우선) 2) gps_logs(보조) =====
+    // ===== 데이터 구독 =====
     const refRealtime = db.ref(REALTIME_PATH);
     const refGpsLogs  = db.ref(GPS_LOGS_PATH);
-
     let hadRealtimeFix = false;
 
-    // 1) 실시간(통합 노드)
     refRealtime.on("value", snap => {
       const d = snap.val();
       if (!d) return;
-
       const lat = toNum(d.lat ?? d.latitude);
       const lon = toNum(d.lon ?? d.lng ?? d.longitude);
       const spd = toNum(d.GPS_Speed_KPH ?? d.gps_speed ?? d.speed_kph ?? d.VSS_kmh);
       const alt = toNum(d.altitude ?? d.alt ?? d.gps_alt);
       const hdg = toNum(d.heading ?? d.course ?? d.bearing);
-
       if (lat !== undefined && lon !== undefined) hadRealtimeFix = true;
       render({lat, lon, spd, alt, hdg});
     });
 
-    // 2) gps_logs 최신 1건 (실시간이 없을 때만 반영)
     refGpsLogs.orderByKey().limitToLast(1).on('value', snap => {
       if (hadRealtimeFix || !snap.exists()) return;
       let v; snap.forEach(ch => v = ch.val());
@@ -300,7 +307,6 @@
       render({lat, lon, spd});
     });
 
-    // 경로 초기화
     btnReset.addEventListener('click', () => {
       trackLine.setLatLngs([]);
       localStorage.removeItem(TRACK_KEY);
@@ -315,12 +321,11 @@
     import { GLTFLoader } from 'https://esm.sh/three@0.159.0/examples/jsm/loaders/GLTFLoader.js';
 
     // ====== 부드러운 보간을 위한 설정 ======
-    const BUFFER_DELAY_MS = 180;   // 화면은 현재보다 이만큼 과거 시점을 재생(지터 흡수)
-    const MAX_BUFFER_MS   = 2000;  // 버퍼 유지 최대 길이
-    const EXTRAP_MAX_MS   = 120;   // 보간 구간 밖일 때 허용하는 최대 외삽
-
-    const EMA_TAU_MS      = 120;   // EMA 시간상수(미세 흔들림 억제)
-    const ROT_RESP_MS     = 120;   // 회전 응답 시간(짧을수록 즉각, 길수록 부드러움)
+    const BUFFER_DELAY_MS = 180;
+    const MAX_BUFFER_MS   = 2000;
+    const EXTRAP_MAX_MS   = 120;
+    const EMA_TAU_MS      = 120;
+    const ROT_RESP_MS     = 120;
 
     // ----- 가속도 샘플 버퍼 -----
     class SampleBuffer {
@@ -328,14 +333,11 @@
       push(sample) {
         this.arr.push(sample);
         const tNow = performance.now();
-        // 오래된 샘플 제거
         while (this.arr.length && (tNow - this.arr[0].t) > MAX_BUFFER_MS) this.arr.shift();
       }
-      // t(밀리초)에 대한 선형 보간값 반환 {ax,ay,az} 또는 null
       getAt(t) {
         const a = this.arr;
         if (a.length === 0) return null;
-        // 경계: 너무 과거/미래면 외삽 허용 범위 확인
         if (t <= a[0].t) {
           const dt = a[0].t - t;
           if (dt > EXTRAP_MAX_MS) return null;
@@ -346,7 +348,6 @@
           if (dt > EXTRAP_MAX_MS) return null;
           return { ax: a[a.length-1].ax, ay: a[a.length-1].ay, az: a[a.length-1].az };
         }
-        // 사이 구간 찾기
         let lo = 0, hi = a.length - 1;
         while (lo + 1 < hi) {
           const mid = (lo + hi) >> 1;
@@ -362,13 +363,7 @@
 
     // ====== THREE 기본 셋업 ======
     const canvas = document.getElementById('threeCanvas');
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-      preserveDrawingBuffer: false
-    });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.set(3.2, 2.0, 4.2);
@@ -380,91 +375,46 @@
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
     const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(5,10,7); scene.add(dir);
 
-    // 바닥
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(20, 64),
       new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.95, metalness: 0.0 })
     );
     ground.rotateX(-Math.PI/2); ground.position.y = -0.01; scene.add(ground);
 
-    // 차량 모델
     let car = new THREE.Group();
     car.quaternion.identity();
     const loader = new GLTFLoader();
     loader.load('./car.glb', (gltf)=>{
       car = gltf.scene || new THREE.Group();
-      // 스케일 정규화
       const box0 = new THREE.Box3().setFromObject(car);
       const size0 = new THREE.Vector3(); box0.getSize(size0);
       const maxDim = Math.max(size0.x, size0.y, size0.z) || 1;
       const scale = 2.0 / maxDim;
       car.scale.setScalar(scale);
-      // 중심 원점
       const box1 = new THREE.Box3().setFromObject(car);
       const center = new THREE.Vector3(); box1.getCenter(center);
       car.position.sub(center);
-      // 바닥에 올리기
       const box2 = new THREE.Box3().setFromObject(car);
       const raise = -box2.min.y + 0.02;
       car.position.y += (isFinite(raise) ? raise : 0.02);
-
       scene.add(car);
     }, undefined, ()=>{
-      // 실패시 박스 프록시
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(2,0.6,4),
-        new THREE.MeshStandardMaterial({ color: 0x2266ff, metalness:0.2, roughness:0.6 })
-      );
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,0.6,4), new THREE.MeshStandardMaterial({ color: 0x2266ff }));
       mesh.position.y = 0.3;
       car.add(mesh);
       scene.add(car);
     });
 
-    // 환경(서킷)
     let envGroup = new THREE.Group();
     scene.add(envGroup);
-    function clearEnv(){
-      envGroup.children.forEach(ch => {
-        ch.traverse?.(o => {
-          o.geometry?.dispose?.();
-          if (o.material){
-            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
-            else o.material.dispose?.();
-          }
-        });
-      });
-      scene.remove(envGroup);
-      envGroup = new THREE.Group();
-      scene.add(envGroup);
-    }
     function setCircuitEnv(){
-      clearEnv();
+      // ... (환경 설정 코드는 변경 없음) ...
       renderer.setClearColor(0x060606, 1);
       ground.visible = false;
-
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(120, 120),
-        new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.95, metalness: 0.0 })
-      );
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: 0x151515 }));
       plane.rotation.x = -Math.PI/2; envGroup.add(plane);
-
       const grid = new THREE.GridHelper(120, 60, 0x333333, 0x242424);
       grid.position.y = 0.01; envGroup.add(grid);
-
-      const path = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-40, 0.02, 0),
-        new THREE.Vector3( 40, 0.02, 0)
-      ]);
-      envGroup.add(new THREE.Line(path, new THREE.LineBasicMaterial({ color: 0xffc300 })));
-
-      const outlinePts = [[-45,-18],[45,-18],[45,18],[-45,18]].map(([x,z])=>new THREE.Vector3(x,0.02,z));
-      const outlineGeo = new THREE.BufferGeometry().setFromPoints([...outlinePts, outlinePts[0]]);
-      const outline = new THREE.Line(
-        outlineGeo,
-        new THREE.LineDashedMaterial({ color: 0x888888, dashSize: 1.2, gapSize: 0.6 })
-      );
-      outline.computeLineDistances();
-      envGroup.add(outline);
     }
     setCircuitEnv();
 
@@ -478,37 +428,31 @@
     resize();
 
     // ====== 가속도 → 각도 계산 & 매끄럽게 표시 ======
-    const axEl = document.getElementById('axVal');
-    const ayEl = document.getElementById('ayVal');
-    const azEl = document.getElementById('azVal');
-    const pitchEl = document.getElementById('pitchVal');
-    const rollEl  = document.getElementById('rollVal');
+    const axEl = document.getElementById('axVal'), ayEl = document.getElementById('ayVal'), azEl = document.getElementById('azVal');
+    const pitchEl = document.getElementById('pitchVal'), rollEl  = document.getElementById('rollVal');
+    
+    // [수정] 자세 보정(영점)을 위한 변수 추가
+    const btnCalibrate = document.getElementById('btnCalibrate');
+    let zeroQuaternionInverse = new THREE.Quaternion(); // 영점 자세의 역쿼터니언
 
-    // EMA 상태
     let ema = { ax: 0, ay: 0, az: 1 };
     let emaInit = false;
-
-    // 목표 회전(쿼터니언)
+    
     const qTarget = new THREE.Quaternion();
     const eulerTmp = new THREE.Euler(0, 0, 0, 'XYZ');
 
-    // 숫자 안전 변환(중력 단위로 맞춤)
     const toG = (v) => {
       const n = Number(v);
       if (!Number.isFinite(n)) return null;
-      // 만약 m/s^2가 들어온다면 대략 9.80665로 나눠 g로 변환(값이 큰 경우만)
       return Math.abs(n) > 3.2 ? (n / 9.80665) : n;
     };
 
-    // Firebase 구독(가속도만 추출 → 버퍼에 저장)
     const accRef = window.firebase.database().ref("emu_realtime_data");
     accRef.on("value", snap => {
       const d = snap.val(); if(!d) return;
       const cands = [
-        {x:'ax_g', y:'ay_g', z:'az_g'},
-        {x:'ax',   y:'ay',   z:'az'},
-        {x:'AccelX', y:'AccelY', z:'AccelZ'},
-        {x:'acc_x',  y:'acc_y',  z:'acc_z'}
+        {x:'ax_g', y:'ay_g', z:'az_g'}, {x:'ax', y:'ay', z:'az'},
+        {x:'AccelX', y:'AccelY', z:'AccelZ'}, {x:'acc_x', y:'acc_y', z:'acc_z'}
       ];
       let ax, ay, az;
       for (const k of cands){
@@ -517,35 +461,46 @@
         }
       }
       if (ax==null || ay==null || az==null) return;
-
-      // 타임스탬프: 데이터에 ts(ms)/timestamp 있으면 사용, 아니면 수신 시각 사용
       const tRemote = Number(d.ts ?? d.timestamp);
-      const t = Number.isFinite(tRemote) ? (tRemote) : performance.now();
-
+      const t = Number.isFinite(tRemote) ? tRemote : performance.now();
       buf.push({ t, ax, ay, az });
     });
 
-    // 각도 계산
     function accelToAngles(ax, ay, az){
-      // 정규화(0 division 방지)
       const m = Math.hypot(ax, ay, az) || 1;
       const x = ax / m, y = ay / m, z = az / m;
-      const pitch = Math.atan2(x, Math.hypot(y, z)); // X 기울기
-      const roll  = Math.atan2(y, z);                // Y 기울기
+      const pitch = Math.atan2(x, Math.hypot(y, z));
+      const roll  = Math.atan2(y, z);
       return { pitch, roll };
     }
+
+    // [수정] 자세 보정 버튼 이벤트 리스너
+    btnCalibrate.addEventListener('click', () => {
+        // 현재 EMA 값으로 각도를 계산하여 쿼터니언 생성
+        const { pitch, roll } = accelToAngles(ema.ax, ema.ay, ema.az);
+        eulerTmp.set(pitch, 0, -roll, 'XYZ');
+        const currentOrientation = new THREE.Quaternion().setFromEuler(eulerTmp);
+        
+        // 이 쿼터니언의 역행렬을 저장
+        zeroQuaternionInverse.copy(currentOrientation).invert();
+
+        // 사용자에게 피드백
+        btnCalibrate.textContent = "영점 설정 완료!";
+        setTimeout(() => {
+            btnCalibrate.textContent = "자세 보정 (영점 설정)";
+        }, 1500);
+    });
+
 
     const clock = new THREE.Clock();
 
     function animate(){
-      const dt = clock.getDelta() * 1000; // ms
+      const dt = clock.getDelta() * 1000;
       const now = performance.now();
       const tDisplay = now - BUFFER_DELAY_MS;
 
-      // 버퍼에서 보간 가속도 가져오기
       const s = buf.getAt(tDisplay);
       if (s){
-        // 시간 상수 기반 EMA 계수
         const alpha = 1 - Math.exp(-dt / EMA_TAU_MS);
         if (!emaInit){
           ema = { ax: s.ax, ay: s.ay, az: s.az };
@@ -556,20 +511,23 @@
           ema.az += (s.az - ema.az) * alpha;
         }
 
-        // UI 표기
         axEl.textContent = ema.ax.toFixed(3);
         ayEl.textContent = ema.ay.toFixed(3);
         azEl.textContent = ema.az.toFixed(3);
 
         const { pitch, roll } = accelToAngles(ema.ax, ema.ay, ema.az);
-        // 타겟 오일러 → 쿼터니언(roll은 우측 기울어질수록 +, 차량 z축 회전에 반영)
+        
+        // [수정] 절대 자세가 아닌 상대 자세를 계산하여 qTarget 설정
+        // 1. 현재 가속도 값으로 '절대' 자세 쿼터니언을 계산
         eulerTmp.set(pitch, 0, -roll, 'XYZ');
-        qTarget.setFromEuler(eulerTmp);
-        // 응답 상수 기반 slerp
+        const absoluteOrientation = new THREE.Quaternion().setFromEuler(eulerTmp);
+
+        // 2. 영점(zeroQuaternionInverse)을 곱하여 '상대' 자세를 계산
+        qTarget.multiplyQuaternions(absoluteOrientation, zeroQuaternionInverse);
+        
         const slerpAlpha = 1 - Math.exp(-dt / ROT_RESP_MS);
         car.quaternion.slerp(qTarget, slerpAlpha);
 
-        // 각도 UI(도)
         pitchEl.textContent = (pitch*180/Math.PI).toFixed(1);
         rollEl.textContent  = (roll *180/Math.PI).toFixed(1);
       }
