@@ -5,288 +5,78 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MF-25 - Realtime Dashboard</title>
 
-  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
     :root {
-      --bg-color: #1a1a1a;
-      --panel-color: #2c2c2c;
-      --text-color: #e0e0e0;
-      --accent-yellow: #ffc300;
-      --warning-red: #e74c3c;
-      --warning-orange:#ff9f1a;
-      --panel-border:#333;
-      --panel-shadow: rgba(0,0,0,0.5);
-      --card-bg:#111;
-      --gauge-track:#1b3761;
-      --gauge-glow: rgba(255,195,0,0.08);
+      --bg-color: #1a1a1a; --panel-color: #2c2c2c; --text-color: #e0e0e0;
+      --accent-yellow: #ffc300; --warning-red: #e74c3c; --warning-orange:#ff9f1a;
+      --panel-border:#333; --panel-shadow: rgba(0,0,0,0.5); --card-bg:#111;
+      --gauge-track:#1b3761; --gauge-glow: rgba(255,195,0,0.08);
     }
-
     * { box-sizing: border-box; }
     body {
-      margin: 0;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      font-family: 'Roboto', sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      min-height: 100vh;
-      padding: 10px;
+      margin: 0; background-color: var(--bg-color); color: var(--text-color);
+      font-family: 'Roboto', sans-serif; display: flex; justify-content: center;
+      align-items: flex-start; min-height: 100vh; padding: 10px;
     }
-
     .container {
-      width: 100%;
-      max-width: 1000px;
-      background: #000;
-      border: 2px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 10px;
-      box-shadow: 0 0 20px var(--panel-shadow);
+      width: 100%; max-width: 1000px; background: #000;
+      border: 2px solid var(--panel-border); border-radius: 10px;
+      padding: 10px; box-shadow: 0 0 20px var(--panel-shadow);
     }
-
-    /* Nav */
-    nav {
-      display: flex;
-      flex-wrap: wrap;
-      border-bottom: 2px solid var(--panel-border);
-      margin-bottom: 15px;
-    }
+    nav { display: flex; flex-wrap: wrap; border-bottom: 2px solid var(--panel-border); margin-bottom: 15px; }
     nav a {
-      flex: 1;
-      min-width: 120px;
-      text-align: center;
-      padding: 10px;
-      color: var(--text-color);
-      text-decoration: none;
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 500;
-      border-bottom: 3px solid transparent;
-      transition: all .3s ease;
+      flex: 1; min-width: 120px; text-align: center; padding: 10px; color: var(--text-color);
+      text-decoration: none; font-family: 'Orbitron', sans-serif; font-weight: 500;
+      border-bottom: 3px solid transparent; transition: all .3s ease;
     }
-    nav a.active {
-      color: var(--accent-yellow);
-      border-bottom-color: var(--accent-yellow);
-    }
-
-    /* Main panel */
-    .center-section {
-      background: var(--panel-color);
-      border-radius: 8px;
-      padding: 15px;
-      border: 1px solid var(--panel-border);
-    }
-
-    /* Gauges grid */
-    .gauges-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 15px;
-      width: 100%;
-      margin-bottom: 20px;
-    }
-
+    nav a.active { color: var(--accent-yellow); border-bottom-color: var(--accent-yellow); }
+    .center-section { background: var(--panel-color); border-radius: 8px; padding: 15px; border: 1px solid var(--panel-border); }
+    .gauges-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; margin-bottom: 20px; }
     .gauge {
-      background: var(--card-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-      box-shadow: inset 0 0 8px var(--gauge-glow);
-      cursor: pointer;
-      transition: transform .15s ease;
+      background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
+      padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      box-shadow: inset 0 0 8px var(--gauge-glow); cursor: pointer; transition: transform .15s ease;
     }
     .gauge:hover { transform: translateY(-2px); }
-
-    .gauge-label {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 700;
-      letter-spacing: .5px;
-      color: #9bcfff;
-      font-size: 16px;
-      text-align: center;
-    }
-
-    .gauge-bar-container {
-      width: 100%;
-      height: 12px;
-      background: var(--gauge-track);
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid #102744;
-    }
-
+    .gauge-label { font-family: 'Orbitron', sans-serif; font-weight: 700; letter-spacing: .5px; color: #9bcfff; font-size: 16px; text-align: center; }
+    .gauge-bar-container { width: 100%; height: 12px; background: var(--gauge-track); border-radius: 8px; overflow: hidden; border: 1px solid #102744; }
     .gauge-bar {
-      height: 100%;
-      width: 0%;
-      border-radius: 8px;
-      transition: width .3s ease;
+      height: 100%; width: 0%; border-radius: 8px;
+      /* 👇 게이지 바의 부드러운 움직임을 위한 CSS transition */
+      transition: width .2s ease-out;
       background: linear-gradient(to right, #0077ff, #ff4f4f);
     }
-
-    .gauge-bar-labels {
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: #7ea6d6;
-      user-select: none;
-    }
-
-    /* Center numbers */
-    .gear {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 900;
-      font-size: 100px;
-      color: var(--accent-yellow);
-      text-shadow: 0 0 15px rgba(255, 195, 0, 0.5);
-      text-align: center;
-      margin: 6px 0 10px 0;
-    }
-
-    .rpm {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 700;
-      font-size: 44px;
-      text-align: center;
-      margin-bottom: 10px;
-    }
-
-    .rpm-bar-container {
-      width: 100%;
-      max-width: 640px;
-      height: 24px;
-      background: var(--gauge-track);
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid #102744;
-      margin: 0 auto 8px;
-    }
+    .gauge-bar-labels { width: 100%; display: flex; justify-content: space-between; font-size: 11px; color: #7ea6d6; user-select: none; }
+    .gear { font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 100px; color: var(--accent-yellow); text-shadow: 0 0 15px rgba(255, 195, 0, 0.5); text-align: center; margin: 6px 0 10px 0; }
+    .rpm { font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 44px; text-align: center; margin-bottom: 10px; }
+    .rpm-bar-container { width: 100%; max-width: 640px; height: 24px; background: var(--gauge-track); border-radius: 14px; overflow: hidden; border: 1px solid #102744; margin: 0 auto 8px; }
     .rpm-bar {
-      height: 100%;
-      width: 0%;
-      border-radius: 14px;
+      height: 100%; width: 0%; border-radius: 14px;
       background: linear-gradient(to right, #0077ff, #ff4f4f);
+       /* 👇 RPM 바의 부드러운 움직임을 위한 CSS transition */
       transition: width .2s linear;
     }
-
-    .rpm-labels {
-      width: 100%;
-      max-width: 640px;
-      margin: 0 auto 16px;
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      color: #7ea6d6;
-      user-select: none;
-    }
-
-    .speed-display {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 700;
-      text-align: center;
-      font-size: 36px;
-      background: #141414;
-      color: var(--text-color);
-      padding: 12px 24px;
-      border-radius: 12px;
-      border: 1px solid var(--panel-border);
-      width: fit-content;
-      margin: 0 auto 8px;
-    }
-
-    .tagline-banner {
-      text-align: center;
-      font-family: 'Orbitron', sans-serif;
-      color: var(--accent-yellow);
-      letter-spacing: 3px;
-      margin-bottom: 4px;
-    }
-
-    /* bottom info: warning indicators */
-    .bottom-info {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      justify-content: center;
-      padding: 10px;
-      margin-top: 8px;
-      background: #111;
-      border: 1px solid var(--panel-border);
-      border-radius: 8px;
-    }
+    .rpm-labels { width: 100%; max-width: 640px; margin: 0 auto 16px; display: flex; justify-content: space-between; font-size: 12px; color: #7ea6d6; user-select: none; }
+    .speed-display { font-family: 'Orbitron', sans-serif; font-weight: 700; text-align: center; font-size: 36px; background: #141414; color: var(--text-color); padding: 12px 24px; border-radius: 12px; border: 1px solid var(--panel-border); width: fit-content; margin: 0 auto 8px; }
+    .tagline-banner { text-align: center; font-family: 'Orbitron', sans-serif; color: var(--accent-yellow); letter-spacing: 3px; margin-bottom: 4px; }
+    .bottom-info { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 10px; margin-top: 8px; background: #111; border: 1px solid var(--panel-border); border-radius: 8px; }
     .indicator { width: 28px; height: 28px; }
     .indicator svg { width: 100%; height: 100%; fill: #555; transition: fill .2s ease; }
     .indicator.active svg { fill: var(--warning-red); }
-
-    /* Modal (history) */
-    .modal-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.7);
-      display: none;
-      justify-content: center;
-      align-items: center;
-      z-index: 2000;
-    }
-    .modal-content {
-      background: #000;
-      border: 2px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 12px;
-      width: clamp(320px, 92vw, 560px);
-      max-height: 70vh;
-      box-shadow: 0 0 20px var(--panel-shadow);
-      position: relative;
-      overflow: hidden;
-      animation: pop .12s ease-out;
-    }
-    @keyframes pop {
-      from { transform: scale(.97); opacity: .9; }
-      to   { transform: scale(1);   opacity: 1; }
-    }
-    .modal-close {
-      position: absolute; top: 8px; right: 12px;
-      font-size: 26px; cursor: pointer; line-height: 1;
-      color: var(--accent-yellow);
-      background: rgba(255,195,0,0.08);
-      border: 1px solid var(--accent-yellow);
-      border-radius: 6px;
-      padding: 2px 8px;
-      text-shadow: 0 0 8px rgba(255,195,0,0.6);
-    }
-    #chart-title {
-      font-family: 'Orbitron', sans-serif;
-      text-align: center; margin: 6px 0 8px 0; font-size: 18px;
-      color:#ffd666;
-    }
-    #sensor-chart {
-      display: block;
-      width: 100% !important;
-      height: clamp(180px, 45vh, 300px) !important;
-    }
-
-    /* Responsive */
-    @media (max-width: 768px){
-      .gauges-grid { grid-template-columns: repeat(2, 1fr); }
-      .gear { font-size: 80px; }
-      .rpm { font-size: 32px; }
-      .speed-display { font-size: 28px; }
-    }
-    @media (max-width: 480px){
-      .gauges-grid { grid-template-columns: 1fr; }
-      .gear { font-size: 64px; }
-      .rpm { font-size: 26px; }
-      .speed-display { font-size: 24px; }
-    }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 2000; }
+    .modal-content { background: #000; border: 2px solid var(--panel-border); border-radius: 12px; padding: 12px; width: clamp(320px, 92vw, 560px); max-height: 70vh; box-shadow: 0 0 20px var(--panel-shadow); position: relative; overflow: hidden; animation: pop .12s ease-out; }
+    @keyframes pop { from { transform: scale(.97); opacity: .9; } to { transform: scale(1); opacity: 1; } }
+    .modal-close { position: absolute; top: 8px; right: 12px; font-size: 26px; cursor: pointer; line-height: 1; color: var(--accent-yellow); background: rgba(255,195,0,0.08); border: 1px solid var(--accent-yellow); border-radius: 6px; padding: 2px 8px; text-shadow: 0 0 8px rgba(255,195,0,0.6); }
+    #chart-title { font-family: 'Orbitron', sans-serif; text-align: center; margin: 6px 0 8px 0; font-size: 18px; color:#ffd666; }
+    #sensor-chart { display: block; width: 100% !important; height: clamp(180px, 45vh, 300px) !important; }
+    @media (max-width: 768px){ .gauges-grid { grid-template-columns: repeat(2, 1fr); } .gear { font-size: 80px; } .rpm { font-size: 32px; } .speed-display { font-size: 28px; } }
+    @media (max-width: 480px){ .gauges-grid { grid-template-columns: 1fr; } .gear { font-size: 64px; } .rpm { font-size: 26px; } .speed-display { font-size: 24px; } }
   </style>
 </head>
 <body>
@@ -296,205 +86,147 @@
       <a href="./sensor.html" class="tab-link">Sensor data</a>
       <a href="./gps.html" class="tab-link">GPS</a>
     </nav>
-
     <section class="center-section">
       <div class="gauges-grid">
-        <div class="gauge" data-key="CLT_C" data-label="Coolant Temp">
-          <div class="gauge-label">CLT IN</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar0"></div></div>
-          <div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div>
-        </div>
-
-        <div class="gauge" data-key="OilTemp_C" data-label="Oil Temp">
-          <div class="gauge-label">EOT IN</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar1"></div></div>
-          <div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div>
-        </div>
-
-        <div class="gauge" data-key="IAT_C" data-label="Intake Air Temp">
-          <div class="gauge-label">IAT</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar2"></div></div>
-          <div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div>
-        </div>
-
-        <div class="gauge" data-key="FuelPressure_bar" data-label="Fuel Pressure">
-          <div class="gauge-label">CLT OUT</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar3"></div></div>
-          <div class="gauge-bar-labels"><span>0</span><span>5</span><span>10</span></div>
-        </div>
-
-        <div class="gauge" data-key="EOT_OUT" data-label="Oil Temp OUT">
-          <div class="gauge-label">EOT OUT</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar4"></div></div>
-          <div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div>
-        </div>
-
-        <div class="gauge" data-key="TPS_percent" data-label="Throttle Position">
-          <div class="gauge-label">TPS</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar5"></div></div>
-          <div class="gauge-bar-labels"><span>0%</span><span>50%</span><span>100%</span></div>
-        </div>
-
-        <div class="gauge" data-key="fuelPumpTemp" data-label="Fuel Pump Temp">
-          <div class="gauge-label">Fuel Pump Temp</div>
-          <div class="gauge-bar-container"><div class="gauge-bar" id="bar6"></div></div>
-          <div class="gauge-bar-labels"><span>0°</span><span>60°</span><span>100°</span></div>
-        </div>
+        <div class="gauge" data-key="CLT_C" data-label="Coolant Temp"><div class="gauge-label">CLT IN</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar0"></div></div><div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div></div>
+        <div class="gauge" data-key="OilTemp_C" data-label="Oil Temp"><div class="gauge-label">EOT IN</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar1"></div></div><div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div></div>
+        <div class="gauge" data-key="IAT_C" data-label="Intake Air Temp"><div class="gauge-label">IAT</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar2"></div></div><div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div></div>
+        <div class="gauge" data-key="FuelPressure_bar" data-label="Fuel Pressure"><div class="gauge-label">CLT OUT</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar3"></div></div><div class="gauge-bar-labels"><span>0</span><span>5</span><span>10</span></div></div>
+        <div class="gauge" data-key="EOT_OUT" data-label="Oil Temp OUT"><div class="gauge-label">EOT OUT</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar4"></div></div><div class="gauge-bar-labels"><span>0°</span><span>70°</span><span>130°</span></div></div>
+        <div class="gauge" data-key="TPS_percent" data-label="Throttle Position"><div class="gauge-label">TPS</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar5"></div></div><div class="gauge-bar-labels"><span>0%</span><span>50%</span><span>100%</span></div></div>
+        <div class="gauge" data-key="fuelPumpTemp" data-label="Fuel Pump Temp"><div class="gauge-label">Fuel Pump Temp</div><div class="gauge-bar-container"><div class="gauge-bar" id="bar6"></div></div><div class="gauge-bar-labels"><span>0°</span><span>60°</span><span>100°</span></div></div>
       </div>
-
       <div class="gear" id="gear">N</div>
       <div class="rpm" id="rpm">0 RPM</div>
       <div class="rpm-bar-container"><div class="rpm-bar" id="rpmBar"></div></div>
-      <div class="rpm-labels">
-        <span>0</span><span>1k</span><span>2k</span><span>3k</span><span>4k</span><span>5k</span><span>6k</span><span>7k</span><span>8k</span><span>9k</span><span>10k</span><span>11k</span><span>12k</span><span>13k</span>
-      </div>
-
+      <div class="rpm-labels"><span>0</span><span>1k</span><span>2k</span><span>3k</span><span>4k</span><span>5k</span><span>6k</span><span>7k</span><span>8k</span><span>9k</span><span>10k</span><span>11k</span><span>12k</span><span>13k</span></div>
       <div class="speed-display" id="speed">0 km/h</div>
       <div class="tagline-banner">무한질주</div>
-
-      <!-- Warning indicators -->
       <div class="bottom-info">
-        <div class="indicator" id="cel-indicator" title="Check Engine Light">
-          <svg viewBox="0 0 24 24"><path d="M12 2L22 21H2L12 2M11 10V14H13V10H11M11 16V18H13V16H11Z"/></svg>
-        </div>
-        <div class="indicator" id="batt-indicator" title="Low Battery">
-          <svg viewBox="0 0 24 24"><path d="M16.5,4H15V2H9V4H7.5A1.5,1.5 0 0,0 6,5.5V20.5A1.5,1.5 0 0,0 7.5,22H16.5A1.5,1.5 0 0,0 18,20.5V5.5A1.5,1.5 0 0,0 16.5,4M13,18H11V16H13V18M13,14H11V9H13V14Z"/></svg>
-        </div>
+        <div class="indicator" id="cel-indicator" title="Check Engine Light"><svg viewBox="0 0 24 24"><path d="M12 2L22 21H2L12 2M11 10V14H13V10H11M11 16V18H13V16H11Z"/></svg></div>
+        <div class="indicator" id="batt-indicator" title="Low Battery"><svg viewBox="0 0 24 24"><path d="M16.5,4H15V2H9V4H7.5A1.5,1.5 0 0,0 6,5.5V20.5A1.5,1.5 0 0,0 7.5,22H16.5A1.5,1.5 0 0,0 18,20.5V5.5A1.5,1.5 0 0,0 16.5,4M13,18H11V16H13V18M13,14H11V9H13V14Z"/></svg></div>
       </div>
-
-      <!-- All sensors table: 외부 컴포넌트 -->
       <div id="all-sensors-container" style="margin-top:16px;"></div>
     </section>
   </div>
 
-  <!-- Modal -->
-  <div class="modal-overlay" id="graph-modal" role="dialog" aria-modal="true" aria-labelledby="chart-title">
-    <div class="modal-content">
-      <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
-      <h3 id="chart-title">Sensor History</h3>
-      <canvas id="sensor-chart"></canvas>
-    </div>
-  </div>
+  <div class="modal-overlay" id="graph-modal"><div class="modal-content"><button class="modal-close" id="modal-close-btn">✕</button><h3 id="chart-title">Sensor History</h3><canvas id="sensor-chart"></canvas></div></div>
 
-  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
   <script>
-    // Nav active
     document.addEventListener("DOMContentLoaded", () => {
       const links = document.querySelectorAll('nav a');
       const current = window.location.pathname.split('/').pop() || 'dashboard.html';
       links.forEach(a => { if (a.getAttribute('href').includes(current)) a.classList.add('active'); });
     });
 
-    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyA44pnRn5t073UuSOPw3mkVwjvCLP4ZzJU",
       authDomain: "emucanlogger.firebaseapp.com",
       databaseURL: "https://emucanlogger-default-rtdb.firebaseio.com",
       projectId: "emucanlogger",
-      storageBucket: "emucanlogger.firebasestorage.app",
+      storageBucket: "emucanlogger.appspot.com",
       messagingSenderId: "289716936070",
       appId: "1:289716936070:web:8502e0f2c69ae362616007"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // UI refs
     const sensorMap = [
-      { key: 'CLT_C',           bar: 'bar0', max: 130, label: 'Coolant Temp' },
-      { key: 'OilTemp_C',       bar: 'bar1', max: 130, label: 'Oil Temp IN' },
-      { key: 'IAT_C',           bar: 'bar2', max: 130, label: 'Intake Air Temp' },
+      { key: 'CLT_C', bar: 'bar0', max: 130, label: 'Coolant Temp' },
+      { key: 'OilTemp_C', bar: 'bar1', max: 130, label: 'Oil Temp IN' },
+      { key: 'IAT_C', bar: 'bar2', max: 130, label: 'Intake Air Temp' },
       { key: 'FuelPressure_bar',bar: 'bar3', max: 10,  label: 'Fuel Pressure' },
-      { key: 'EOT_OUT',         bar: 'bar4', max: 130, label: 'Oil Temp OUT' },
-      { key: 'TPS_percent',     bar: 'bar5', max: 100, label: 'Throttle Position' },
-      { key: 'fuelPumpTemp',    bar: 'bar6', max: 100, label: 'Fuel Pump Temp' }
+      { key: 'EOT_OUT', bar: 'bar4', max: 130, label: 'Oil Temp OUT' },
+      { key: 'TPS_percent', bar: 'bar5', max: 100, label: 'Throttle Position' },
+      { key: 'fuelPumpTemp', bar: 'bar6', max: 100, label: 'Fuel Pump Temp' }
     ];
 
     const ui = {
       bars: sensorMap.map(s => document.getElementById(s.bar)),
-      gear: document.getElementById("gear"),
-      rpm: document.getElementById("rpm"),
-      rpmBar: document.getElementById("rpmBar"),
-      speed: document.getElementById("speed"),
-      gauges: document.querySelectorAll('.gauge'),
-      celIndicator: document.getElementById('cel-indicator'),
-      battIndicator: document.getElementById('batt-indicator'),
-
-      // modal
-      modal: document.getElementById('graph-modal'),
-      modalCloseBtn: document.getElementById('modal-close-btn'),
-      chartTitle: document.getElementById('chart-title'),
+      gear: document.getElementById("gear"), rpm: document.getElementById("rpm"),
+      rpmBar: document.getElementById("rpmBar"), speed: document.getElementById("speed"),
+      gauges: document.querySelectorAll('.gauge'), celIndicator: document.getElementById('cel-indicator'),
+      battIndicator: document.getElementById('batt-indicator'), modal: document.getElementById('graph-modal'),
+      modalCloseBtn: document.getElementById('modal-close-btn'), chartTitle: document.getElementById('chart-title'),
       chartCtx: document.getElementById('sensor-chart').getContext('2d')
     };
 
-    // ===== History buffers (for all sensors) =====
     const MAX_DATA_POINTS = 50;
     const sensorHistory = {};
     sensorMap.forEach(s => { sensorHistory[s.key] = { labels: [], data: [] }; });
 
-    // ===== Modal chart =====
-    let currentModalKey = null;       // 현재 모달에 표시 중인 센서 키
-    let isModalOpen = false;
-
+    let currentModalKey = null, isModalOpen = false;
     let sensorChart = new Chart(ui.chartCtx, {
-      type: 'line',
-      data: { labels: [], datasets: [{
-        label: 'Value',
-        data: [],
-        borderColor: '#ffc300',
-        backgroundColor: 'rgba(255,195,0,0.12)',
-        borderWidth: 2, tension: 0.3, fill: true, pointRadius: 0
-      }]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        animation: { duration: 150 },
-        scales: {
-          x: { ticks: { display: false }, grid: { color: '#222' } },
-          y: { beginAtZero: true, grid: { color: '#222' }, ticks: { color: '#e0e0e0' } }
-        },
-        plugins: { legend: { labels: { color: '#e0e0e0', font: { family: 'Roboto' } } } },
-        layout: { padding: { left: 2, right: 2, top: 0, bottom: 0 } }
-      }
+      type: 'line', data: { labels: [], datasets: [{ label: 'Value', data: [], borderColor: '#ffc300', backgroundColor: 'rgba(255,195,0,0.12)', borderWidth: 2, tension: 0.3, fill: true, pointRadius: 0 }]},
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 150 }, scales: { x: { ticks: { display: false }, grid: { color: '#222' } }, y: { beginAtZero: true, grid: { color: '#222' }, ticks: { color: '#e0e0e0' } } }, plugins: { legend: { labels: { color: '#e0e0e0', font: { family: 'Roboto' } } } }, layout: { padding: { left: 2, right: 2, top: 0, bottom: 0 } } }
     });
 
-    // Open modal on gauge click
     ui.gauges.forEach(g => {
       g.addEventListener('click', () => {
-        const key = g.dataset.key;
-        const label = g.dataset.label || key;
-        const h = sensorHistory[key];
+        const key = g.dataset.key, label = g.dataset.label || key, h = sensorHistory[key];
         if (!h) return;
-
-        currentModalKey = key;
-        ui.chartTitle.textContent = `${label} History`;
-        // seed 현재 버퍼
-        sensorChart.data.labels = h.labels.slice();
-        sensorChart.data.datasets[0].data = h.data.slice();
-        sensorChart.data.datasets[0].label = label;
-        sensorChart.update();
-
-        isModalOpen = true;
-        ui.modal.style.display = 'flex';
+        currentModalKey = key; ui.chartTitle.textContent = `${label} History`;
+        sensorChart.data.labels = h.labels.slice(); sensorChart.data.datasets[0].data = h.data.slice();
+        sensorChart.data.datasets[0].label = label; sensorChart.update();
+        isModalOpen = true; ui.modal.style.display = 'flex';
       });
     });
 
-    // Close modal
-    function closeModal(){
-      isModalOpen = false;
-      currentModalKey = null;
-      ui.modal.style.display = 'none';
-    }
+    function closeModal(){ isModalOpen = false; currentModalKey = null; ui.modal.style.display = 'none'; }
     ui.modalCloseBtn.addEventListener('click', closeModal);
     ui.modal.addEventListener('click', (e) => { if (e.target === ui.modal) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-    // ===== Main update loop =====
+    // ====================================================================
+    // 👇 애니메이션을 위한 상태 관리 및 루프 (수정된 핵심 부분)
+    // ====================================================================
+
+    // 화면에 '현재' 그려지고 있는 값을 저장 (애니메이션 시작점)
+    const displayState = { rpm: 0, speed: 0 };
+    // Firebase에서 받은 '최신' 값을 저장 (애니메이션 목표점)
+    const targetState = { rpm: 0, speed: 0 };
+
+    // 애니메이션 루프 함수
+    function animationLoop() {
+      // RPM 값 부드럽게 변경
+      if (Math.abs(targetState.rpm - displayState.rpm) > 1) {
+        // (목표값 - 현재값) * 0.15 만큼 이동. 0.15는 애니메이션 속도 계수.
+        displayState.rpm += (targetState.rpm - displayState.rpm) * 0.15;
+        ui.rpm.textContent = `${displayState.rpm.toFixed(0)} RPM`;
+        // RPM Bar는 CSS transition이 있지만, 숫자와 싱크를 맞추기 위해 여기서 업데이트
+        const rpmPercent = Math.min(displayState.rpm / 13000 * 100, 100);
+        ui.rpmBar.style.width = `${rpmPercent}%`;
+      }
+
+      // 속도(VSS) 값 부드럽게 변경
+      if (Math.abs(targetState.speed - displayState.speed) > 0.1) {
+        displayState.speed += (targetState.speed - displayState.speed) * 0.15;
+        ui.speed.textContent = `${displayState.speed.toFixed(0)} km/h`;
+      }
+
+      // 브라우저의 다음 렌더링 타이밍에 맞춰 이 함수를 계속 호출
+      requestAnimationFrame(animationLoop);
+    }
+
+    // 페이지 로드 시 최초 한 번만 애니메이션 루프를 시작
+    animationLoop();
+
+
+    // ====================================================================
+    // 👇 Firebase 데이터 수신 및 메인 업데이트 로직 (수정된 핵심 부분)
+    // ====================================================================
     function update(data){
       if (!data) return;
 
-      // Gauges
+      // 1. 애니메이션이 적용될 값들은 'targetState' 객체만 업데이트합니다.
+      //    화면(DOM)을 직접 변경하지 않고, animationLoop가 변경하도록 맡깁니다.
+      targetState.rpm = Number(data.RPM ?? targetState.rpm);
+      targetState.speed = Number(data.VSS_kmh ?? targetState.speed);
+
+      // 2. 작은 게이지 바들은 CSS transition 효과를 사용하므로 직접 업데이트.
       sensorMap.forEach((sensor, i) => {
         const val = Number(data[sensor.key]);
         if (!isNaN(val)) {
@@ -503,10 +235,7 @@
         }
       });
 
-      // RPM / Gear / Speed
-      const rpmVal = Number(data.RPM ?? 0);
-      ui.rpm.textContent = `${rpmVal} RPM`;
-
+      // 3. 기어, 경고등처럼 애니메이션이 필요 없는 값들은 즉시 업데이트.
       const gearRaw = data.Gear;
       let gearDisplay = 'N';
       if (gearRaw !== undefined && gearRaw !== null) {
@@ -514,67 +243,45 @@
         gearDisplay = (gnum === 0 || isNaN(gnum)) ? 'N' : String(gearRaw);
       }
       ui.gear.textContent = gearDisplay;
-
-      ui.speed.textContent = `${Number(data.VSS_kmh ?? 0)} km/h`;
-      const rpmPercent = Math.min(rpmVal / 13000 * 100, 100);
-      ui.rpmBar.style.width = `${rpmPercent}%`;
-      ui.rpmBar.style.background = rpmVal > 11000
-        ? 'linear-gradient(to right, #ff8a00, #ff0000)'
-        : 'linear-gradient(to right, #0077ff, #ff4f4f)';
-
-      // Warnings
       ui.celIndicator.classList.toggle('active', Number(data.CEL_Error ?? 0) !== 0);
       ui.battIndicator.classList.toggle('active', Number(data.Batt_V ?? 14) < 12.0);
 
-      // History buffers + modal live-append
+      // RPM Bar 색상 즉시 변경
+      ui.rpmBar.style.background = targetState.rpm > 11000
+        ? 'linear-gradient(to right, #ff8a00, #ff0000)'
+        : 'linear-gradient(to right, #0077ff, #ff4f4f)';
+
+      // 4. 히스토리 버퍼 및 차트 업데이트 로직 (기존과 동일)
       const now = new Date().toLocaleTimeString();
       sensorMap.forEach(s => {
         const v = data[s.key];
         if (v === undefined) return;
-
         const h = sensorHistory[s.key];
-        h.labels.push(now);
-        h.data.push(v);
+        h.labels.push(now); h.data.push(v);
         if (h.data.length > MAX_DATA_POINTS) { h.labels.shift(); h.data.shift(); }
-
-        // 모달이 열려 있고 현재 센서라면 실시간 반영
         if (isModalOpen && currentModalKey === s.key) {
-          const labels = sensorChart.data.labels;
-          const series = sensorChart.data.datasets[0].data;
-          labels.push(now);
-          series.push(v);
+          const labels = sensorChart.data.labels; const series = sensorChart.data.datasets[0].data;
+          labels.push(now); series.push(v);
           if (labels.length > MAX_DATA_POINTS) { labels.shift(); series.shift(); }
-          sensorChart.update('none'); // 부드러운 실시간
+          sensorChart.update('none');
         }
       });
 
-      // 공용 테이블 업데이트
       if (window.allSensorsTable) window.allSensorsTable.update(data);
     }
 
-    const dataRef = db.ref("emu_realtime_data");
+    const dataRef = db.ref("emu_realtime_data"); // Firebase 데이터 경로
     dataRef.on('value', (snap) => update(snap.val()));
   </script>
 
-  <!-- 공용 센서 테이블 모듈 -->
   <script type="module">
     import { loadAllSensorsTable } from './sensors-table.js';
-
     const RULES = {
-      CLT_C: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
-      clt_IN: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
-      clt_OUT: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
-      OilTemp_C: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
-      EOT_OUT: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
-      IAT: v => v>=70 ? 'warn' : null,
-      IAT_C: v => v>=70 ? 'warn' : null,
-      FuelPressure_bar: v => v<2.5 ? 'warn' : null,
-      OilPressure_bar: v => v<0.5 ? 'crit' : (v<1.0 ? 'warn' : null),
-      Batt_V: v => v<11.5 ? 'crit' : (v<12.0 ? 'warn' : null),
-      fuelPumpTemp: v => v>=90 ? 'crit' : (v>=70 ? 'warn' : null),
-      CEL_Error: v => Number(v)!==0 ? 'crit' : null
+        CLT_C: v => v>=120 ? 'crit' : (v>=110 ? 'warn' : null),
+        OilTemp_C: v => v>=130 ? 'crit' : (v>=120 ? 'warn' : null),
+        Batt_V: v => v<11.5 ? 'crit' : (v<12.0 ? 'warn' : null),
+        CEL_Error: v => Number(v)!==0 ? 'crit' : null
     };
-
     (async () => {
       window.allSensorsTable = await loadAllSensorsTable('all-sensors-container', {
         baseHidden: ['lat','lon','gps_fix','timestamp','_path','millis','time','session_id'],
