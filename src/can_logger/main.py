@@ -7,276 +7,268 @@ import signal
 import time
 import threading
 from datetime import datetime
+from queue import Queue, Empty # 1. 스레드 안전 큐 임포트
 
-# --- 설정 파일 및 모듈 임포트 ---
-try:
-    from .config import (
-        LOG_DIR, SERIAL_PORT, BAUD_RATE,
-        EMU_IDS, FB_PATHS
-    )
-    from .firebase_client import FirebaseClient
-    from .gpio_ctrl import GpioController
-    from .can_worker import CanWorker
-    from .gps_worker import GpsWorker
-    from .wifi_monitor import start_wifi_monitor
-    from .accel_worker import AccelWorker
-except ImportError:
-    # --- 개발 환경용 가상 클래스 (실제 환경에서는 이 부분이 실행되지 않음) ---
-    print("경고: 실제 모듈을 찾을 수 없어 가상 클래스를 사용합니다.", file=sys.stderr)
-    LOG_DIR, SERIAL_PORT, BAUD_RATE = "logs", "/dev/ttyS0", 9600
-    EMU_IDS, FB_PATHS = {"FRAME_0": 0x600}, {"LEGACY_REALTIME": "emu_realtime_data"}
-    class FirebaseClient:
-        def patch(self, path, data): pass
-        def now_ms(self): return int(time.time() * 1000)
-    class GpioController:
-        def set_logging_led(self, state): pass
-        def blink_logging_led_once(self, duration): pass
-        def read_button_pressed(self): return False
-        def cleanup(self): pass
-        def set_error_led(self, state): pass
-    class BaseWorker:
-        def __init__(self, **kwargs): pass
-        def start(self): pass
-        def shutdown(self): pass
-    class CanWorker(BaseWorker):
-        def recv_once(self, timeout): pass
-    class GpsWorker(BaseWorker):
-        def read_once(self): pass
-    class AccelWorker(BaseWorker):
-        def read_once(self): pass
-    def start_wifi_monitor(gpio, event):
-        def dummy_wifi_thread():
-            while not event.is_set():
-                time.sleep(1)
-        thread = threading.Thread(target=dummy_wifi_thread, daemon=True)
-        thread.start()
-        return thread
-    # --- 가상 클래스 끝 ---
-
+# 모듈 임포트
+from .config import (
+    LOG_DIR, SERIAL_PORT, BAUD_RATE, CAN_CHANNEL, CAN_BITRATE,
+    EMU_IDS, FB_PATHS, CAN_UPLOAD_INTERVAL_SEC # config.py에서 설정
+)
+from .firebase_client import FirebaseClient
+from .gpio_ctl import GpioController
+from .can_worker import CanWorker
+from .gps_worker import GpsWorker
+from .wifi_monitor import start_wifi_monitor
+from .accel_worker import AccelWorker
 
 # ======== 전역 상태 변수 ========
-exit_event = threading.Event()  # 프로그램 종료 신호
-logging_active = False          # 현재 로깅(CSV 저장) 활성화 상태
+exit_event = threading.Event()
+logging_active = False
+last_button_press_time = 0.0
 
-# 각 센서의 최신 데이터를 저장하는 딕셔너리
+# 데이터 저장소 (CLI, CSV 로깅용)
 latest_can_data = {}
 latest_gps_data = {}
 latest_acc_data = {}
 
-# CSV 파일 및 쓰기 관련 객체
+# 2. Firebase 업로드를 위한 데이터 버퍼 큐 생성
+data_upload_queue = Queue()
+
+# CSV 로깅 관련
 csv_file = None
 csv_writer = None
 
-# 버튼 디바운싱을 위한 타임스탬프
-last_button_ts = 0.0
-
-
-def ensure_root():
-    """스크립트가 root 권한으로 실행되었는지 확인합니다."""
-    if os.geteuid() != 0:
-        print("오류: 이 스크립트는 sudo 권한으로 실행해야 합니다.", file=sys.stderr)
-        sys.exit(1)
-
-def patch_legacy_realtime(fb: FirebaseClient):
-    """
-    웹(gps.html)이 구독하는 경로에 CAN, GPS, ACC 데이터를 병합하여 전송합니다.
-    데이터 수신 시마다 호출되지 않고, 메인 루프에서 주기적으로 호출됩니다.
-    """
-    merged = {}
-    merged.update(latest_can_data)
-    merged.update(latest_gps_data)
-    merged.update(latest_acc_data)
-
-    # 데이터가 하나라도 있어야 전송
-    if not merged:
-        return
-
-    # 웹 클라이언트와의 호환성을 위한 별칭(alias) 추가
-    if "Latitude" in merged: merged.setdefault("lat", merged["Latitude"])
-    if "Longitude" in merged: merged.setdefault("lon", merged["Longitude"])
-    if "Altitude" in merged: merged.setdefault("altitude", merged["Altitude"])
-    if "Heading" in merged: merged.setdefault("heading", merged["Heading"])
-
-    merged["ts"] = fb.now_ms()
-    fb.patch(FB_PATHS["LEGACY_REALTIME"], merged)
-
-def on_can_parsed(arbitration_id: int, parsed: dict, gpio: GpioController):
-    """
-    CAN 데이터 수신 시 호출되는 콜백 함수.
-    - 최신 CAN 상태를 전역 변수에 업데이트합니다.
-    - 로깅이 활성화된 경우, 특정 CAN ID(FRAME_0) 수신 시 CSV에 한 줄 기록합니다.
-    """
-    global latest_can_data, csv_writer
+# ======== 콜백 함수들 ========
+def on_can_message(arbitration_id: int, parsed: dict):
+    """CAN 메시지 수신 시 호출될 콜백"""
+    global latest_can_data
     latest_can_data.update(parsed)
+    data_upload_queue.put(parsed) # 3. 수신 데이터를 큐에도 추가
 
-    # 로깅이 활성화되어 있고, FRAME_0 메시지를 받으면 CSV에 한 줄 기록
-    if logging_active and csv_writer and arbitration_id == EMU_IDS["FRAME_0"]:
-        # CSV에 기록할 데이터 행(row) 생성
-        row = {"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]}
-        row.update(latest_gps_data)
-        row.update(latest_can_data)
-        row.update(latest_acc_data)
-        
-        csv_writer.writerow(row)
-        gpio.blink_logging_led_once(50) # 로깅 LED를 짧게 깜빡여 기록되었음을 표시
-
-def on_gps_update(gps_parsed: dict):
-    """GPS 데이터 갱신 시 호출되는 콜백. 최신 GPS 상태를 업데이트합니다."""
+def on_gps_update(parsed: dict):
+    """GPS 데이터 갱신 시 호출될 콜백"""
     global latest_gps_data
-    latest_gps_data.update(gps_parsed)
+    latest_gps_data.update(parsed)
+    data_upload_queue.put(parsed) # 3. 수신 데이터를 큐에도 추가
 
-def on_acc_update(acc_parsed: dict):
-    """가속도계 데이터 갱신 시 호출되는 콜백. 최신 가속도계 상태를 업데이트합니다."""
+def on_accel_update(parsed: dict):
+    """가속도계 데이터 갱신 시 호출될 콜백"""
     global latest_acc_data
-    latest_acc_data.update(acc_parsed)
+    latest_acc_data.update(parsed)
+    data_upload_queue.put(parsed) # 3. 수신 데이터를 큐에도 추가
 
-def toggle_logging(gpio: GpioController):
-    """
-    로깅 시작/정지 버튼을 처리하는 함수.
-    - CSV 파일을 열거나 닫고, 관련 객체를 설정/해제합니다.
-    - 로깅 상태 LED를 켜거나 끕니다.
-    """
+# ======== 핵심 로직 ========
+def toggle_logging_state(gpio: GpioController):
+    """CSV 로깅 상태를 토글합니다."""
     global logging_active, csv_file, csv_writer
     logging_active = not logging_active
 
     if logging_active:
         gpio.set_logging_led(True)
-        # 로그 파일 이름에 현재 시간을 포함하여 생성
-        csv_filename = f"{LOG_DIR}/datalog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        os.makedirs(LOG_DIR, exist_ok=True) # 로그 디렉토리가 없으면 생성
-        print(f"\n버튼: 로깅 시작 → {csv_filename}")
-        
-        csv_file = open(csv_filename, "w", newline="", encoding='utf-8')
-        
-        # CSV 파일의 헤더(필드 이름) 정의
+        os.makedirs(LOG_DIR, exist_ok=True)
+        filename = f"{LOG_DIR}/datalog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        print(f"\n[INFO] 로깅 시작 -> {filename}")
+        csv_file = open(filename, 'w', newline='', encoding='utf-8')
         fieldnames = [
-            "Timestamp", "Latitude", "Longitude", "GPS_Speed_KPH", "Satellites",
-            "RPM", "TPS_percent", "IAT_C", "MAP_kPa", "PulseWidth_ms",
-            "AnalogIn1_V", "AnalogIn2_V", "AnalogIn3_V", "AnalogIn4_V",
-            "VSS_kmh", "Baro_kPa", "OilTemp_C", "OilPressure_bar", "FuelPressure_bar", "CLT_C",
-            "IgnAngle_deg", "DwellTime_ms", "WBO_Lambda", "LambdaCorrection_percent", "EGT1_C", "EGT2_C",
-            "Gear", "EmuTemp_C", "Batt_V", "CEL_Error", "Flags1", "Ethanol_percent",
-            "DBW_Pos_percent", "DBW_Target_percent", "TC_drpm_raw", "TC_drpm", "TC_TorqueReduction_percent", "PitLimit_TorqueReduction_percent",
-            "AnalogIn5_V", "AnalogIn6_V", "OutFlags1", "OutFlags2", "OutFlags3", "OutFlags4",
-            "BoostTarget_kPa", "PWM1_DC_percent", "DSG_Mode", "LambdaTarget", "PWM2_DC_percent", "FuelUsed_L",
-            "ax_g", "ay_g", "az_g" # 가속도계 데이터 필드
+            "Timestamp", "Latitude", "Longitude", "GPS_Speed_KPH", "Satellites", "Altitude_m", "Heading_deg",
+            "RPM","TPS_percent","IAT_C","MAP_kPa","PulseWidth_ms","AnalogIn1_V","AnalogIn2_V","AnalogIn3_V","AnalogIn4_V",
+            "VSS_kmh","Baro_kPa","OilTemp_C","OilPressure_bar","FuelPressure_bar","CLT_C","IgnAngle_deg","DwellTime_ms",
+            "WBO_Lambda","LambdaCorrection_percent","EGT1_C","EGT2_C","Gear","EmuTemp_C","Batt_V","CEL_Error","Flags1",
+            "Ethanol_percent","DBW_Pos_percent","DBW_Target_percent","TC_drpm_raw","TC_drpm","TC_TorqueReduction_percent",
+            "PitLimit_TorqueReduction_percent","AnalogIn5_V","AnalogIn6_V","OutFlags1","OutFlags2","OutFlags3","OutFlags4",
+            "BoostTarget_kPa","PWM1_DC_percent","DSG_Mode","LambdaTarget","PWM2_DC_percent","FuelUsed_L",
+            "ax_g", "ay_g", "az_g"
         ]
-        csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction="ignore")
+        csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction='ignore')
         csv_writer.writeheader()
     else:
-        print("\n버튼: 로깅 종료")
+        print("\n[INFO] 로깅 중지.")
         gpio.set_logging_led(False)
         if csv_file:
             name = csv_file.name
             csv_file.close()
-            print(f"로그 저장 완료: {name}")
-            csv_file = None
-            csv_writer = None
+            print(f"[INFO] 로그 파일 저장 완료: {name}")
+        csv_file = None
+        csv_writer = None
+
+def write_csv_log_entry(gpio: GpioController):
+    """결합된 데이터로 CSV 파일에 한 줄을 기록"""
+    if not logging_active or not csv_writer:
+        return
+    full_row = {
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+        "Latitude": latest_gps_data.get("lat"), "Longitude": latest_gps_data.get("lon"),
+        "GPS_Speed_KPH": latest_gps_data.get("GPS_Speed_KPH"), "Satellites": latest_gps_data.get("satellites"),
+        "Altitude_m": latest_gps_data.get("altitude"), "Heading_deg": latest_gps_data.get("heading"),
+    }
+    full_row.update(latest_can_data)
+    full_row.update(latest_acc_data)
+    csv_writer.writerow(full_row)
+    gpio.blink_logging_led_once(duration_ms=50)
+
+def print_status_line():
+    """터미널에 현재 상태를 한 줄로 출력합니다."""
+    gps_status = "OK" if latest_gps_data.get("gps_fix") else "No Fix"
+    vss = latest_can_data.get('VSS_kmh', latest_gps_data.get('GPS_Speed_KPH', 0.0))
+    status_text = (
+        "RPM:{:>5} | MAP:{:>3}kPa | TPS:{:>5.1f}% | Batt:{:>4.1f}V | "
+        "CLT:{:>4}°C | VSS:{:>5.1f}km/h | GPS:{} | Log:{} | Q:{:<3}"
+    ).format(
+        latest_can_data.get('RPM', 0), latest_can_data.get('MAP_kPa', 0),
+        latest_can_data.get('TPS_percent', 0.0), latest_can_data.get('Batt_V', 0.0),
+        latest_can_data.get('CLT_C', 0), vss, gps_status, "ON" if logging_active else "OFF",
+        data_upload_queue.qsize() # 큐 사이즈 표시
+    )
+    sys.stdout.write("\r" + status_text + "    ")
+    sys.stdout.flush()
+
+
+# ======== Firebase 업로더 ========
+def firebase_batch_uploader(fb: FirebaseClient, stop_event: threading.Event):
+    """
+    4. 새로운 통합 업로더
+    주기적으로 큐의 모든 데이터를 취합하여 최신 값만 Firebase에 한 번에 업로드
+    """
+    while not stop_event.is_set():
+        # 다음 업로드 시간까지 대기
+        stop_event.wait(CAN_UPLOAD_INTERVAL_SEC)
+
+        if data_upload_queue.empty():
+            continue
+
+        # 큐에 쌓인 모든 데이터를 꺼내 최신 값으로 업데이트
+        final_data_to_upload = {}
+        while not data_upload_queue.empty():
+            try:
+                data = data_upload_queue.get_nowait()
+                final_data_to_upload.update(data)
+            except Empty:
+                break # 동시성 문제 방지
+
+        # VSS 데이터가 CAN에서 오지 않았다면 GPS 속도로 대체
+        if 'VSS_kmh' not in final_data_to_upload and 'GPS_Speed_KPH' in latest_gps_data:
+            final_data_to_upload['VSS_kmh'] = latest_gps_data.get('GPS_Speed_KPH', 0.0)
+
+        # 타임스탬프 추가
+        final_data_to_upload['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+        # 취합된 최종 데이터를 Firebase에 단 한 번만 업로드
+        if final_data_to_upload:
+            try:
+                fb.patch(FB_PATHS["LEGACY_REALTIME"], final_data_to_upload)
+            except Exception as e:
+                print(f"\n[ERROR] Firebase upload failed: {e}")
+
 
 def handle_exit(signum, frame):
-    """Ctrl+C 등 종료 신호를 받았을 때 호출되는 함수."""
-    if not exit_event.is_set():
-        print("\n종료 신호 수신. 안전 종료 중...", flush=True)
-        exit_event.set()
+    print("\n[INFO] 종료 신호 수신. 리소스를 정리합니다...")
+    exit_event.set()
 
-def run():
-    """메인 실행 함수."""
-    global last_button_ts
-    ensure_root()
+def worker_loop(worker, stop_event: threading.Event):
+    """Worker의 read/recv_once를 루프에서 계속 호출하는 스레드 대상 함수"""
+    method_name = "recv_once" if hasattr(worker, "recv_once") else "read_once"
+    read_method = getattr(worker, method_name)
+    while not stop_event.is_set():
+        try:
+            read_method()
+        except Exception as e:
+            print(f"\n[ERROR] {type(worker).__name__} 스레드에서 오류 발생: {e}", file=sys.stderr)
+            if isinstance(e, (IOError, OSError)):
+                break
+        time.sleep(0.001)
 
-    # --- 객체 초기화 ---
-    fb = FirebaseClient()
+def main():
+    """메인 실행 함수"""
+    global last_button_press_time
+
+    if os.geteuid() != 0:
+        print("오류: 이 스크립트는 sudo 권한으로 실행해야 합니다.")
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
+
+    # --- 초기화 ---
     gpio = GpioController()
+    fb = FirebaseClient()
+    can_worker = CanWorker(on_message=on_can_message)
+    gps_worker = GpsWorker(port=SERIAL_PORT, baudrate=BAUD_RATE, on_update=on_gps_update)
+    accel_worker = AccelWorker(on_update=on_accel_update)
 
-    # --- 콜백 함수에 필요한 객체 바인딩 ---
-    # 각 콜백이 자신에게 필요한 객체(gpio 등)에 접근할 수 있도록 람다 함수로 감싸줍니다.
-    def _can_cb(arbid, parsed): return on_can_parsed(arbid, parsed, gpio)
-    def _gps_cb(parsed): return on_gps_update(parsed)
-    def _acc_cb(parsed): return on_acc_update(parsed)
-
-    # --- 워커(센서 처리) 객체 생성 ---
-    canw = CanWorker(on_parsed=_can_cb)
-    gpsw = GpsWorker(serial_port=SERIAL_PORT, baudrate=BAUD_RATE, on_update=_gps_cb)
-    accw = AccelWorker(i2c_bus=1, address=0x53, on_update=_acc_cb)
-
-    # --- 백그라운드 스레드 시작 ---
-    wifi_thread = start_wifi_monitor(gpio, exit_event)
-
-    # --- 워커 시작 ---
-    print("CAN 인터페이스 활성화 및 버스 열기...")
-    canw.start()
-    
+    # --- Worker 시작 ---
     try:
-        print("GPS 포트 열기...")
-        gpsw.start()
-        print(f"GPS 수신 시작: {SERIAL_PORT} @ {BAUD_RATE}")
+        can_worker.start()
+        gps_worker.start()
     except Exception as e:
-        print(f"경고: GPS 포트 초기화 실패: {e}", file=sys.stderr)
-
+        print(f"[ERROR] 필수 Worker(CAN/GPS) 시작 실패: {e}", file=sys.stderr)
+        gpio.set_error_led(True)
+        exit_event.set()
     try:
-        print("ADXL345 시작...")
-        accw.start()
-        print("ADXL345 준비 완료 (I²C-1, 0x53)")
+        accel_worker.start()
+        print("가속도계(ADXL345) 시작 완료.")
     except Exception as e:
-        print(f"경고: ADXL345 초기화 실패: {e}", file=sys.stderr)
+        print(f"[WARNING] 가속도계 시작 실패: {e}. 가속도 데이터 없이 계속합니다.", file=sys.stderr)
 
-    print("\n대기 중... 버튼을 눌러 로깅을 시작/정지하세요. (종료: Ctrl+C)")
+    # --- 스레드 시작 ---
+    start_wifi_monitor(gpio, exit_event)
+
+    # 5. 통합된 업로더 스레드 하나만 생성 및 시작
+    uploader_thread = threading.Thread(target=firebase_batch_uploader, args=(fb, exit_event), daemon=True)
+    uploader_thread.start()
+    print(f"Firebase 통합 업로드 스레드 시작 (주기: {CAN_UPLOAD_INTERVAL_SEC}s)")
+
+    # 데이터 수집 워커 스레드
+    can_thread = threading.Thread(target=worker_loop, args=(can_worker, exit_event), daemon=True)
+    gps_thread = threading.Thread(target=worker_loop, args=(gps_worker, exit_event), daemon=True)
+    accel_thread = threading.Thread(target=worker_loop, args=(accel_worker, exit_event), daemon=True)
+    can_thread.start()
+    gps_thread.start()
+    accel_thread.start()
+    print("데이터 수집 스레드 시작 (CAN, GPS, ACCEL)")
+
+    if not exit_event.is_set():
+        print("\n[INFO] 데이터 수집을 시작합니다. 버튼을 눌러 로깅을 제어하세요. (종료: Ctrl+C)")
 
     # --- 메인 루프 ---
-    last_firebase_update_ts = 0.0
-    last_csv_flush_ts = 0.0
-    
+    last_csv_write_time = 0.0
     try:
         while not exit_event.is_set():
             now = time.time()
-
-            # 1. 버튼 입력 처리 (300ms 디바운싱)
-            if gpio.read_button_pressed() and now - last_button_ts > 0.3:
-                toggle_logging(gpio)
-                last_button_ts = now
-
-            # 2. 각 센서 데이터 1회 읽기
-            canw.recv_once(timeout=0.02)
-            gpsw.read_once()
-            accw.read_once()
-
-            #주기적인 Firebase 업데이트 (0.2초마다)
-            if now - last_firebase_update_ts > 0.2:
-                patch_legacy_realtime(fb)
-                last_firebase_update_ts = now
-
-            # CSV 파일 flush (0.5초마다)
-            if logging_active and csv_file and now - last_csv_flush_ts > 0.5:
-                csv_file.flush()
-                last_csv_flush_ts = now
-            
-            # 루프의 과도한 CPU 점유를 막기 위한 짧은 대기
-            time.sleep(0.005)
-
+            # 1. 버튼 입력 처리
+            if gpio.read_button_pressed() and (now - last_button_press_time > 0.3):
+                last_button_press_time = now
+                toggle_logging_state(gpio)
+            # 2. CSV 로깅 (20Hz)
+            if logging_active and (now - last_csv_write_time > 0.05):
+                write_csv_log_entry(gpio)
+                last_csv_write_time = now
+            # 3. 상태 출력
+            print_status_line()
+            time.sleep(0.05)
+    except (KeyboardInterrupt, SystemExit):
+        pass
     except Exception as e:
-        print(f"\n메인 루프에서 심각한 오류 발생: {e}", file=sys.stderr)
+        print(f"\n[FATAL] 메인 루프에서 심각한 오류 발생: {e}", file=sys.stderr)
         gpio.set_error_led(True)
     finally:
-        # --- 종료 처리 ---
         exit_event.set()
-        
-        print("모든 워커 종료 중...", flush=True)
-        canw.shutdown()
-        gpsw.shutdown()
-        accw.shutdown()
+        print("\n[INFO] 모든 스레드와 Worker를 종료합니다.")
 
-        if wifi_thread:
-            wifi_thread.join(timeout=2.0)
+        # 스레드 종료 대기
+        can_thread.join(timeout=0.5)
+        gps_thread.join(timeout=0.5)
+        accel_thread.join(timeout=0.5)
+        uploader_thread.join(timeout=1.0) # 업로더 스레드 join
 
+        # Worker 및 리소스 정리
+        can_worker.shutdown()
+        gps_worker.shutdown()
+        accel_worker.shutdown()
         if csv_file and not csv_file.closed:
-            print(f"열려있는 로그 파일 저장: {csv_file.name}")
             csv_file.close()
-            
+            print(f"[INFO] 로그 파일 저장 완료: {csv_file.name}")
         gpio.cleanup()
-        print("정리 완료. 프로그램 종료.")
+        print("[INFO] 프로그램이 완전히 종료되었습니다.")
 
 if __name__ == "__main__":
-    # SIGINT(Ctrl+C)와 SIGTERM(종료 명령) 신호를 처리할 함수 등록
-    signal.signal(signal.SIGINT, handle_exit)
-    signal.signal(signal.SIGTERM, handle_exit)
-    run()
+    main()
