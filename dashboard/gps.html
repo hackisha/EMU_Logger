@@ -5,16 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MF-25 - GPS</title>
 
-  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
 
-  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -107,7 +104,6 @@
     }
     .btn:hover{ filter:brightness(1.03); }
     .btn:active{ transform:translateY(1px); }
-    /* [수정] 자세 보정 버튼을 위한 약간 다른 스타일 */
     .btn-secondary {
         background: #3a3a3a;
         color: #e0e0e0;
@@ -143,14 +139,12 @@
 </head>
 <body>
   <div class="container">
-    <!-- NAV -->
     <nav>
       <a href="./dashboard.html">Main Dashboard</a>
       <a href="./sensor.html">Sensor data</a>
       <a href="./gps.html" class="active">GPS</a>
     </nav>
 
-    <!-- MAP -->
     <section class="map-section">
       <div class="speed-bar" aria-live="polite">
         <div id="speedVal" class="speed-value">--.-</div>
@@ -177,7 +171,6 @@
       </div>
     </section>
 
-    <!-- THREE.JS CAR PANEL -->
     <section class="three-section">
       <div class="three-wrap">
         <div class="accel-hud">
@@ -191,7 +184,6 @@
 
         <canvas id="threeCanvas" class="three-canvas"></canvas>
         
-        <!-- [수정] 자세 보정 버튼 추가 -->
         <div class="actions" style="position:absolute; bottom:12px; right:12px; z-index: 5;">
             <button id="btnCalibrate" class="btn btn-secondary" title="현재 차량의 기울기를 기본 자세로 설정합니다.">자세 보정 (영점 설정)</button>
         </div>
@@ -199,7 +191,6 @@
     </section>
   </div>
 
-  <!-- App (Leaflet + Firebase) -->
   <script>
     /* global L, firebase */
     (function(){
@@ -313,7 +304,6 @@
     });
   </script>
 
-  <!-- Three.js 모듈 (가속도/자세) -->
   <script type="module">
     /* global firebase */
     import * as THREE from 'https://esm.sh/three@0.159.0';
@@ -325,7 +315,8 @@
     const MAX_BUFFER_MS   = 2000;
     const EXTRAP_MAX_MS   = 120;
     const EMA_TAU_MS      = 120;
-    const ROT_RESP_MS     = 120;
+    // [수정] 회전 반응 속도 조절을 위한 상수 추가
+    const ROT_RESP_MS     = 120; // 숫자가 클수록 느리고 부드럽게, 작을수록 빠르게 반응 (단위: ms)
 
     // ----- 가속도 샘플 버퍼 -----
     class SampleBuffer {
@@ -382,7 +373,7 @@
     ground.rotateX(-Math.PI/2); ground.position.y = -0.01; scene.add(ground);
 
     let car = new THREE.Group();
-    car.quaternion.identity();
+    car.quaternion.identity(); // 회전값을 Quaternion으로 초기화
     const loader = new GLTFLoader();
     loader.load('./car.glb', (gltf)=>{
       car = gltf.scene || new THREE.Group();
@@ -408,7 +399,6 @@
     let envGroup = new THREE.Group();
     scene.add(envGroup);
     function setCircuitEnv(){
-      // ... (환경 설정 코드는 변경 없음) ...
       renderer.setClearColor(0x060606, 1);
       ground.visible = false;
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: 0x151515 }));
@@ -431,19 +421,20 @@
     const axEl = document.getElementById('axVal'), ayEl = document.getElementById('ayVal'), azEl = document.getElementById('azVal');
     const pitchEl = document.getElementById('pitchVal'), rollEl  = document.getElementById('rollVal');
     
-    // [수정] 자세 보정(영점)을 위한 변수 추가
     const btnCalibrate = document.getElementById('btnCalibrate');
-    let zeroQuaternionInverse = new THREE.Quaternion(); // 영점 자세의 역쿼터니언
+    let zeroQuaternionInverse = new THREE.Quaternion();
 
     let ema = { ax: 0, ay: 0, az: 1 };
     let emaInit = false;
     
+    // 목표 회전값을 저장할 Quaternion
     const qTarget = new THREE.Quaternion();
     const eulerTmp = new THREE.Euler(0, 0, 0, 'XYZ');
 
     const toG = (v) => {
       const n = Number(v);
       if (!Number.isFinite(n)) return null;
+      // 가속도 센서의 단위가 m/s^2 일 경우 g 단위로 변환 (9.8 근처 값)
       return Math.abs(n) > 3.2 ? (n / 9.80665) : n;
     };
 
@@ -469,22 +460,19 @@
     function accelToAngles(ax, ay, az){
       const m = Math.hypot(ax, ay, az) || 1;
       const x = ax / m, y = ay / m, z = az / m;
+      // Y-up, Z-forward 좌표계 기준 Pitch, Roll 계산
       const pitch = Math.atan2(x, Math.hypot(y, z));
       const roll  = Math.atan2(y, z);
       return { pitch, roll };
     }
-
-    // [수정] 자세 보정 버튼 이벤트 리스너
+    
     btnCalibrate.addEventListener('click', () => {
-        // 현재 EMA 값으로 각도를 계산하여 쿼터니언 생성
         const { pitch, roll } = accelToAngles(ema.ax, ema.ay, ema.az);
-        eulerTmp.set(pitch, 0, -roll, 'XYZ');
+        eulerTmp.set(pitch, 0, -roll, 'XYZ'); // 모델 좌표계에 맞게 z축에 roll 적용
         const currentOrientation = new THREE.Quaternion().setFromEuler(eulerTmp);
         
-        // 이 쿼터니언의 역행렬을 저장
         zeroQuaternionInverse.copy(currentOrientation).invert();
 
-        // 사용자에게 피드백
         btnCalibrate.textContent = "영점 설정 완료!";
         setTimeout(() => {
             btnCalibrate.textContent = "자세 보정 (영점 설정)";
@@ -495,7 +483,7 @@
     const clock = new THREE.Clock();
 
     function animate(){
-      const dt = clock.getDelta() * 1000;
+      const dt = clock.getDelta() * 1000; // ms 단위의 프레임 시간
       const now = performance.now();
       const tDisplay = now - BUFFER_DELAY_MS;
 
@@ -517,14 +505,15 @@
 
         const { pitch, roll } = accelToAngles(ema.ax, ema.ay, ema.az);
         
-        // [수정] 절대 자세가 아닌 상대 자세를 계산하여 qTarget 설정
+        // --- 회전 계산 부분 (기존과 동일) ---
         // 1. 현재 가속도 값으로 '절대' 자세 쿼터니언을 계산
         eulerTmp.set(pitch, 0, -roll, 'XYZ');
         const absoluteOrientation = new THREE.Quaternion().setFromEuler(eulerTmp);
 
-        // 2. 영점(zeroQuaternionInverse)을 곱하여 '상대' 자세를 계산
+        // 2. 영점(zeroQuaternionInverse)을 곱하여 '상대' 자세를 계산하고 qTarget에 저장
         qTarget.multiplyQuaternions(absoluteOrientation, zeroQuaternionInverse);
         
+        // [핵심 개선] 현재 자동차의 각도에서 목표 각도(qTarget)까지 부드럽게 보간
         const slerpAlpha = 1 - Math.exp(-dt / ROT_RESP_MS);
         car.quaternion.slerp(qTarget, slerpAlpha);
 
