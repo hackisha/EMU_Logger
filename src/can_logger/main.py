@@ -7,12 +7,11 @@ import signal
 import time
 import threading
 from datetime import datetime
-from queue import Queue, Empty # 1. 스레드 안전 큐 임포트
 
 # 모듈 임포트
 from .config import (
     LOG_DIR, SERIAL_PORT, BAUD_RATE, CAN_CHANNEL, CAN_BITRATE,
-    EMU_IDS, FB_PATHS, CAN_UPLOAD_INTERVAL_SEC # config.py에서 설정
+    EMU_IDS, FB_PATHS, CAN_UPLOAD_INTERVAL_SEC, GPS_UPLOAD_INTERVAL_SEC
 )
 from .firebase_client import FirebaseClient
 from .gpio_ctl import GpioController
@@ -21,43 +20,37 @@ from .gps_worker import GpsWorker
 from .wifi_monitor import start_wifi_monitor
 from .accel_worker import AccelWorker
 
-# ======== 전역 상태 변수 ========
+# ======== 전역 상태 변수 ======== 
 exit_event = threading.Event()
 logging_active = False
 last_button_press_time = 0.0
 
-# 데이터 저장소 (CLI, CSV 로깅용)
+# 데이터 저장소
 latest_can_data = {}
 latest_gps_data = {}
 latest_acc_data = {}
-
-# 2. Firebase 업로드를 위한 데이터 버퍼 큐 생성
-data_upload_queue = Queue()
 
 # CSV 로깅 관련
 csv_file = None
 csv_writer = None
 
-# ======== 콜백 함수들 ========
+# ======== 콜백 함수들 ======== 
 def on_can_message(arbitration_id: int, parsed: dict):
     """CAN 메시지 수신 시 호출될 콜백"""
     global latest_can_data
     latest_can_data.update(parsed)
-    data_upload_queue.put(parsed) # 3. 수신 데이터를 큐에도 추가
 
 def on_gps_update(parsed: dict):
     """GPS 데이터 갱신 시 호출될 콜백"""
     global latest_gps_data
     latest_gps_data.update(parsed)
-    data_upload_queue.put(parsed) # 3. 수신 데이터를 큐에도 추가
 
 def on_accel_update(parsed: dict):
     """가속도계 데이터 갱신 시 호출될 콜백"""
     global latest_acc_data
     latest_acc_data.update(parsed)
-    data_upload_queue.put(parsed) # 3. 수신 데이터를 큐에도 추가
 
-# ======== 핵심 로직 ========
+# ======== 핵심 로직 ======== 
 def toggle_logging_state(gpio: GpioController):
     """CSV 로깅 상태를 토글합니다."""
     global logging_active, csv_file, csv_writer
@@ -68,7 +61,9 @@ def toggle_logging_state(gpio: GpioController):
         os.makedirs(LOG_DIR, exist_ok=True)
         filename = f"{LOG_DIR}/datalog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         print(f"\n[INFO] 로깅 시작 -> {filename}")
+        
         csv_file = open(filename, 'w', newline='', encoding='utf-8')
+        
         fieldnames = [
             "Timestamp", "Latitude", "Longitude", "GPS_Speed_KPH", "Satellites", "Altitude_m", "Heading_deg",
             "RPM","TPS_percent","IAT_C","MAP_kPa","PulseWidth_ms","AnalogIn1_V","AnalogIn2_V","AnalogIn3_V","AnalogIn4_V",
@@ -92,9 +87,10 @@ def toggle_logging_state(gpio: GpioController):
         csv_writer = None
 
 def write_csv_log_entry(gpio: GpioController):
-    """결합된 데이터로 CSV 파일에 한 줄을 기록"""
+    """결합된 데이터로 CSV 파일에 한 줄을 기록합니다."""
     if not logging_active or not csv_writer:
         return
+
     full_row = {
         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         "Latitude": latest_gps_data.get("lat"), "Longitude": latest_gps_data.get("lon"),
@@ -103,6 +99,7 @@ def write_csv_log_entry(gpio: GpioController):
     }
     full_row.update(latest_can_data)
     full_row.update(latest_acc_data)
+    
     csv_writer.writerow(full_row)
     gpio.blink_logging_led_once(duration_ms=50)
 
@@ -112,53 +109,38 @@ def print_status_line():
     vss = latest_can_data.get('VSS_kmh', latest_gps_data.get('GPS_Speed_KPH', 0.0))
     status_text = (
         "RPM:{:>5} | MAP:{:>3}kPa | TPS:{:>5.1f}% | Batt:{:>4.1f}V | "
-        "CLT:{:>4}°C | VSS:{:>5.1f}km/h | GPS:{} | Log:{} | Q:{:<3}"
+        "CLT:{:>4}°C | VSS:{:>5.1f}km/h | GPS:{} | Logging: {}"
     ).format(
         latest_can_data.get('RPM', 0), latest_can_data.get('MAP_kPa', 0),
         latest_can_data.get('TPS_percent', 0.0), latest_can_data.get('Batt_V', 0.0),
-        latest_can_data.get('CLT_C', 0), vss, gps_status, "ON" if logging_active else "OFF",
-        data_upload_queue.qsize() # 큐 사이즈 표시
+        latest_can_data.get('CLT_C', 0), vss, gps_status, "ON" if logging_active else "OFF"
     )
-    sys.stdout.write("\r" + status_text + "    ")
-    sys.stdout.flush()
+    sys.stdout.write("\r" + status_text + "   ")
 
-
-# ======== Firebase 업로더 ========
-def firebase_batch_uploader(fb: FirebaseClient, stop_event: threading.Event):
-    """
-    4. 새로운 통합 업로더
-    주기적으로 큐의 모든 데이터를 취합하여 최신 값만 Firebase에 한 번에 업로드
-    """
+def can_firebase_uploader(fb: FirebaseClient, stop_event: threading.Event):
+    """주기적으로 CAN + 가속도계 데이터를 Firebase에 업로드"""
     while not stop_event.is_set():
-        # 다음 업로드 시간까지 대기
+        data_to_upload = {}
+        data_to_upload.update(latest_can_data)
+        data_to_upload.update(latest_acc_data)
+
+        if data_to_upload:
+            data_to_upload['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            if 'VSS_kmh' not in data_to_upload and 'GPS_Speed_KPH' in latest_gps_data:
+                data_to_upload['VSS_kmh'] = latest_gps_data.get('GPS_Speed_KPH', 0.0)
+            fb.patch(FB_PATHS["LEGACY_REALTIME"], data_to_upload)
+        
         stop_event.wait(CAN_UPLOAD_INTERVAL_SEC)
 
-        if data_upload_queue.empty():
-            continue
+def gps_firebase_uploader(fb: FirebaseClient, stop_event: threading.Event):
+    """주기적으로 GPS 데이터를 Firebase에 업로드"""
+    while not stop_event.is_set():
+        if latest_gps_data:
+            data_to_upload = latest_gps_data.copy()
+            data_to_upload['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            fb.patch(FB_PATHS["LEGACY_REALTIME"], data_to_upload)
 
-        # 큐에 쌓인 모든 데이터를 꺼내 최신 값으로 업데이트
-        final_data_to_upload = {}
-        while not data_upload_queue.empty():
-            try:
-                data = data_upload_queue.get_nowait()
-                final_data_to_upload.update(data)
-            except Empty:
-                break # 동시성 문제 방지
-
-        # VSS 데이터가 CAN에서 오지 않았다면 GPS 속도로 대체
-        if 'VSS_kmh' not in final_data_to_upload and 'GPS_Speed_KPH' in latest_gps_data:
-            final_data_to_upload['VSS_kmh'] = latest_gps_data.get('GPS_Speed_KPH', 0.0)
-
-        # 타임스탬프 추가
-        final_data_to_upload['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
-        # 취합된 최종 데이터를 Firebase에 단 한 번만 업로드
-        if final_data_to_upload:
-            try:
-                fb.patch(FB_PATHS["LEGACY_REALTIME"], final_data_to_upload)
-            except Exception as e:
-                print(f"\n[ERROR] Firebase upload failed: {e}")
-
+        stop_event.wait(GPS_UPLOAD_INTERVAL_SEC)
 
 def handle_exit(signum, frame):
     print("\n[INFO] 종료 신호 수신. 리소스를 정리합니다...")
@@ -166,21 +148,25 @@ def handle_exit(signum, frame):
 
 def worker_loop(worker, stop_event: threading.Event):
     """Worker의 read/recv_once를 루프에서 계속 호출하는 스레드 대상 함수"""
+    # getattr을 사용하여 유연하게 메소드 호출
     method_name = "recv_once" if hasattr(worker, "recv_once") else "read_once"
     read_method = getattr(worker, method_name)
+    
     while not stop_event.is_set():
         try:
             read_method()
         except Exception as e:
             print(f"\n[ERROR] {type(worker).__name__} 스레드에서 오류 발생: {e}", file=sys.stderr)
+            # 심각한 오류 시 스레드 종료 (예: CAN 버스 다운)
             if isinstance(e, (IOError, OSError)):
                 break
+        # CPU 과점 방지를 위한 짧은 대기
         time.sleep(0.001)
 
 def main():
     """메인 실행 함수"""
     global last_button_press_time
-
+    
     if os.geteuid() != 0:
         print("오류: 이 스크립트는 sudo 권한으로 실행해야 합니다.")
         sys.exit(1)
@@ -194,7 +180,7 @@ def main():
     can_worker = CanWorker(on_message=on_can_message)
     gps_worker = GpsWorker(port=SERIAL_PORT, baudrate=BAUD_RATE, on_update=on_gps_update)
     accel_worker = AccelWorker(on_update=on_accel_update)
-
+    
     # --- Worker 시작 ---
     try:
         can_worker.start()
@@ -203,6 +189,7 @@ def main():
         print(f"[ERROR] 필수 Worker(CAN/GPS) 시작 실패: {e}", file=sys.stderr)
         gpio.set_error_led(True)
         exit_event.set()
+
     try:
         accel_worker.start()
         print("가속도계(ADXL345) 시작 완료.")
@@ -211,16 +198,19 @@ def main():
 
     # --- 스레드 시작 ---
     start_wifi_monitor(gpio, exit_event)
-
-    # 5. 통합된 업로더 스레드 하나만 생성 및 시작
-    uploader_thread = threading.Thread(target=firebase_batch_uploader, args=(fb, exit_event), daemon=True)
-    uploader_thread.start()
-    print(f"Firebase 통합 업로드 스레드 시작 (주기: {CAN_UPLOAD_INTERVAL_SEC}s)")
-
+    
+    can_fb_thread = threading.Thread(target=can_firebase_uploader, args=(fb, exit_event), daemon=True)
+    gps_fb_thread = threading.Thread(target=gps_firebase_uploader, args=(fb, exit_event), daemon=True)
+    
     # 데이터 수집 워커 스레드
     can_thread = threading.Thread(target=worker_loop, args=(can_worker, exit_event), daemon=True)
     gps_thread = threading.Thread(target=worker_loop, args=(gps_worker, exit_event), daemon=True)
     accel_thread = threading.Thread(target=worker_loop, args=(accel_worker, exit_event), daemon=True)
+
+    can_fb_thread.start()
+    gps_fb_thread.start()
+    print("Firebase 업로드 스레드 시작 (CAN/ACC: 0.2s, GPS: 1.0s)")
+    
     can_thread.start()
     gps_thread.start()
     accel_thread.start()
@@ -234,17 +224,22 @@ def main():
     try:
         while not exit_event.is_set():
             now = time.time()
-            # 1. 버튼 입력 처리
+            # 1. 버튼 입력 처리 (Debounce 포함)
             if gpio.read_button_pressed() and (now - last_button_press_time > 0.3):
                 last_button_press_time = now
                 toggle_logging_state(gpio)
-            # 2. CSV 로깅 (20Hz)
+            
+            # 2. CSV 로깅 (20Hz, 50ms 간격)
             if logging_active and (now - last_csv_write_time > 0.05):
                 write_csv_log_entry(gpio)
                 last_csv_write_time = now
+
             # 3. 상태 출력
             print_status_line()
+            
+            # 메인 루프는 CPU를 많이 사용하지 않도록 잠시 대기
             time.sleep(0.05)
+
     except (KeyboardInterrupt, SystemExit):
         pass
     except Exception as e:
@@ -253,20 +248,22 @@ def main():
     finally:
         exit_event.set()
         print("\n[INFO] 모든 스레드와 Worker를 종료합니다.")
-
-        # 스레드 종료 대기
+        
+        # 스레드가 정상적으로 종료될 시간을 잠시 줌
         can_thread.join(timeout=0.5)
         gps_thread.join(timeout=0.5)
         accel_thread.join(timeout=0.5)
-        uploader_thread.join(timeout=1.0) # 업로더 스레드 join
+        can_fb_thread.join(timeout=0.5)
+        gps_fb_thread.join(timeout=0.5)
 
-        # Worker 및 리소스 정리
         can_worker.shutdown()
         gps_worker.shutdown()
         accel_worker.shutdown()
+        
         if csv_file and not csv_file.closed:
             csv_file.close()
             print(f"[INFO] 로그 파일 저장 완료: {csv_file.name}")
+        
         gpio.cleanup()
         print("[INFO] 프로그램이 완전히 종료되었습니다.")
 
