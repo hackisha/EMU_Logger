@@ -16,11 +16,11 @@ from .config import (
 from .firebase_client import FirebaseClient
 from .gpio_ctl import GpioController
 from .can_worker import CanWorker
-from .gps_worker import GpsWorker
+from .gps_worker import GpioController
 from .wifi_monitor import start_wifi_monitor
 from .accel_worker import AccelWorker
 
-# ======== 전역 상태 변수 ======== 
+# ======== 전역 상태 변수 ========
 exit_event = threading.Event()
 logging_active = False
 last_button_press_time = 0.0
@@ -34,7 +34,7 @@ latest_acc_data = {}
 csv_file = None
 csv_writer = None
 
-# ======== 콜백 함수들 ======== 
+# ======== 콜백 함수들 ========
 def on_can_message(arbitration_id: int, parsed: dict):
     """CAN 메시지 수신 시 호출될 콜백"""
     global latest_can_data
@@ -50,7 +50,7 @@ def on_accel_update(parsed: dict):
     global latest_acc_data
     latest_acc_data.update(parsed)
 
-# ======== 핵심 로직 ======== 
+# ======== 핵심 로직 ========
 def toggle_logging_state(gpio: GpioController):
     """CSV 로깅 상태를 토글합니다."""
     global logging_active, csv_file, csv_writer
@@ -106,7 +106,7 @@ def write_csv_log_entry(gpio: GpioController):
 def print_status_line():
     """터미널에 현재 상태를 한 줄로 출력합니다."""
     gps_status = "OK" if latest_gps_data.get("gps_fix") else "No Fix"
-    vss = latest_can_data.get('VSS_kmh', latest_gps_data.get('GPS_Speed_KPH', 0.0))
+    vss = latest_can_data.get('VSS_kmh', 0.0)
     status_text = (
         "RPM:{:>5} | MAP:{:>3}kPa | TPS:{:>5.1f}% | Batt:{:>4.1f}V | "
         "CLT:{:>4}°C | VSS:{:>5.1f}km/h | GPS:{} | Logging: {}"
@@ -115,7 +115,7 @@ def print_status_line():
         latest_can_data.get('TPS_percent', 0.0), latest_can_data.get('Batt_V', 0.0),
         latest_can_data.get('CLT_C', 0), vss, gps_status, "ON" if logging_active else "OFF"
     )
-    sys.stdout.write("\r" + status_text + "   ")
+    sys.stdout.write("\r" + status_text + "    ")
 
 def can_firebase_uploader(fb: FirebaseClient, stop_event: threading.Event):
     """주기적으로 CAN + 가속도계 데이터를 Firebase에 업로드"""
@@ -126,8 +126,7 @@ def can_firebase_uploader(fb: FirebaseClient, stop_event: threading.Event):
 
         if data_to_upload:
             data_to_upload['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            if 'VSS_kmh' not in data_to_upload and 'GPS_Speed_KPH' in latest_gps_data:
-                data_to_upload['VSS_kmh'] = latest_gps_data.get('GPS_Speed_KPH', 0.0)
+            # VSS 대체 로직 제거
             fb.patch(FB_PATHS["LEGACY_REALTIME"], data_to_upload)
         
         stop_event.wait(CAN_UPLOAD_INTERVAL_SEC)
@@ -148,7 +147,6 @@ def handle_exit(signum, frame):
 
 def worker_loop(worker, stop_event: threading.Event):
     """Worker의 read/recv_once를 루프에서 계속 호출하는 스레드 대상 함수"""
-    # getattr을 사용하여 유연하게 메소드 호출
     method_name = "recv_once" if hasattr(worker, "recv_once") else "read_once"
     read_method = getattr(worker, method_name)
     
@@ -157,10 +155,8 @@ def worker_loop(worker, stop_event: threading.Event):
             read_method()
         except Exception as e:
             print(f"\n[ERROR] {type(worker).__name__} 스레드에서 오류 발생: {e}", file=sys.stderr)
-            # 심각한 오류 시 스레드 종료 (예: CAN 버스 다운)
             if isinstance(e, (IOError, OSError)):
                 break
-        # CPU 과점 방지를 위한 짧은 대기
         time.sleep(0.001)
 
 def main():
