@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MF-25 - GPS</title>
+  <title>MF-25 - GPS & Lap Timer</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,6 +21,7 @@
       --panel-color:#2c2c2c;
       --text-color:#e0e0e0;
       --accent-yellow:#ffc300;
+      --accent-red:#e63946;
       --panel-border:#333;
       --panel-shadow: rgba(0,0,0,0.5);
     }
@@ -99,16 +100,79 @@
     .btn{
       background:var(--accent-yellow); color:#111; border:1px solid #8c6d00;
       border-radius:8px; padding:10px 14px; cursor:pointer; font-weight:900;
-      transition:filter .15s ease, transform .02s ease;
+      transition: all .15s ease;
       font-family: 'Roboto', sans-serif;
     }
-    .btn:hover{ filter:brightness(1.03); }
-    .btn:active{ transform:translateY(1px); }
+    .btn:hover{ filter:brightness(1.05); }
+    .btn:active{ transform:translateY(1px); filter:brightness(1.0); }
     .btn-secondary {
         background: #3a3a3a;
         color: #e0e0e0;
         border-color: #555;
     }
+
+    /* ===== LAP TIMER STYLES ===== */
+    .laptimer-section {
+        margin-top: 14px;
+        background: var(--panel-color);
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+    }
+    .timer-display-wrap {
+        text-align: center;
+        padding: 12px 10px;
+        border-bottom: 1px solid var(--panel-border);
+    }
+    .lap-count {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 16px;
+        color: #bbb;
+        margin-bottom: 4px;
+        letter-spacing: 1px;
+    }
+    .timer-display {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 48px;
+        font-weight: 700;
+        color: var(--text-color);
+        letter-spacing: 1.5px;
+    }
+    .laps-list-wrap {
+        flex-grow: 1;
+        max-height: 200px;
+        overflow-y: auto;
+        padding: 4px 10px;
+    }
+    #lapList {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        font-family: 'Roboto', sans-serif;
+    }
+    #lapList li {
+        display: flex;
+        justify-content: space-between;
+        padding: 9px 4px;
+        border-bottom: 1px solid #222;
+        font-size: 16px;
+    }
+    #lapList li:first-child {
+        font-weight: 700;
+        color: var(--accent-yellow);
+    }
+    #lapList .lap-num {
+        color: #bbb;
+        margin-right: 20px;
+    }
+    #lapList .lap-time {
+        font-family: 'Orbitron', sans-serif;
+    }
+    .laps-list-wrap::-webkit-scrollbar { width: 6px; }
+    .laps-list-wrap::-webkit-scrollbar-track { background: #1a1a1a; }
+    .laps-list-wrap::-webkit-scrollbar-thumb { background-color: #555; border-radius: 6px; }
+
 
     .three-section{
       margin-top:14px; background:var(--panel-color);
@@ -133,6 +197,7 @@
     @media (max-width:768px){
       #map{ height:420px; }
       .speed-value{ font-size:34px; }
+      .timer-display { font-size: 38px; }
       .three-wrap{ height:320px; }
     }
   </style>
@@ -150,11 +215,9 @@
         <div id="speedVal" class="speed-value">--.-</div>
         <div class="speed-unit">km/h</div>
       </div>
-
       <div class="map-wrap">
         <div id="map"></div>
       </div>
-
       <div class="info-bar">
         <div class="info-card">
           <div class="info-label">고도</div>
@@ -164,11 +227,27 @@
           <div class="info-label">방향</div>
           <div id="headVal" class="info-value">--°</div>
         </div>
-
         <div class="actions">
           <button id="btnReset" class="btn" title="기록된 이동경로를 지웁니다">이동경로 초기화</button>
         </div>
       </div>
+    </section>
+
+    <section class="laptimer-section">
+        <div class="timer-display-wrap">
+            <div id="lapCount" class="lap-count">LAP 1</div>
+            <div id="timerDisplay" class="timer-display">00:00.000</div>
+        </div>
+        <div class="laps-list-wrap">
+            <ul id="lapList">
+            </ul>
+        </div>
+        <div class="info-bar" style="margin-top:0; padding-top:10px; border-top: 1px solid var(--panel-border);">
+            <div class="actions" style="width:100%; justify-content:flex-end;">
+                <button id="btnLapReset" class="btn btn-secondary" title="랩타임 기록을 초기화합니다">초기화</button>
+                <button id="btnLapAction" class="btn" title="랩타임 측정을 시작하거나 랩을 기록합니다">시작</button>
+            </div>
+        </div>
     </section>
 
     <section class="three-section">
@@ -302,6 +381,91 @@
       trackLine.setLatLngs([]);
       localStorage.removeItem(TRACK_KEY);
     });
+
+    // ===== LAP TIMER LOGIC =====
+    const timerDisplay = document.getElementById('timerDisplay');
+    const lapCountDisplay = document.getElementById('lapCount');
+    const lapList = document.getElementById('lapList');
+    const actionBtn = document.getElementById('btnLapAction');
+    const resetBtn = document.getElementById('btnLapReset');
+
+    let timerState = {
+        isRunning: false,
+        lapStartTime: 0,
+        requestID: null,
+        laps: []
+    };
+
+    function formatTime(ms) {
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        const milliseconds = Math.floor((ms % 1000));
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
+    }
+
+    function renderLaps() {
+        lapList.innerHTML = '';
+        [...timerState.laps].reverse().forEach(lap => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="lap-num">Lap ${lap.lap}</span><span class="lap-time">${formatTime(lap.time)}</span>`;
+            lapList.appendChild(li);
+        });
+    }
+
+    function updateTimer() {
+        const now = performance.now();
+        const lapTime = now - timerState.lapStartTime;
+        timerDisplay.textContent = formatTime(lapTime);
+        timerState.requestID = requestAnimationFrame(updateTimer);
+    }
+
+    function startTimer() {
+        timerState.isRunning = true;
+        const now = performance.now();
+        timerState.lapStartTime = now;
+        timerState.laps = [];
+        lapCountDisplay.textContent = `LAP 1`;
+        actionBtn.textContent = 'Lap';
+        actionBtn.style.background = 'var(--accent-red)';
+        actionBtn.style.borderColor = '#a31f2b';
+        timerState.requestID = requestAnimationFrame(updateTimer);
+    }
+
+    function recordLap() {
+        const now = performance.now();
+        const lapTime = now - timerState.lapStartTime;
+        const currentLapNumber = timerState.laps.length + 1;
+        timerState.laps.push({ lap: currentLapNumber, time: lapTime });
+        timerState.lapStartTime = now;
+        lapCountDisplay.textContent = `LAP ${currentLapNumber + 1}`;
+        renderLaps();
+    }
+
+    function resetTimer() {
+        if (timerState.requestID) {
+            cancelAnimationFrame(timerState.requestID);
+        }
+        timerState.isRunning = false;
+        timerState.laps = [];
+        timerState.requestID = null;
+        timerDisplay.textContent = '00:00.000';
+        lapCountDisplay.textContent = 'LAP 1';
+        actionBtn.textContent = '시작';
+        actionBtn.style.background = '';
+        actionBtn.style.borderColor = '';
+        renderLaps();
+    }
+
+    actionBtn.addEventListener('click', () => {
+        if (timerState.isRunning) {
+            recordLap();
+        } else {
+            startTimer();
+        }
+    });
+
+    resetBtn.addEventListener('click', resetTimer);
+
   </script>
 
   <script type="module">
@@ -315,8 +479,7 @@
     const MAX_BUFFER_MS   = 2000;
     const EXTRAP_MAX_MS   = 120;
     const EMA_TAU_MS      = 120;
-    // [수정] 회전 반응 속도 조절을 위한 상수 추가
-    const ROT_RESP_MS     = 120; // 숫자가 클수록 느리고 부드럽게, 작을수록 빠르게 반응 (단위: ms)
+    const ROT_RESP_MS     = 120;
 
     // ----- 가속도 샘플 버퍼 -----
     class SampleBuffer {
@@ -373,7 +536,7 @@
     ground.rotateX(-Math.PI/2); ground.position.y = -0.01; scene.add(ground);
 
     let car = new THREE.Group();
-    car.quaternion.identity(); // 회전값을 Quaternion으로 초기화
+    car.quaternion.identity();
     const loader = new GLTFLoader();
     loader.load('./car.glb', (gltf)=>{
       car = gltf.scene || new THREE.Group();
@@ -427,14 +590,12 @@
     let ema = { ax: 0, ay: 0, az: 1 };
     let emaInit = false;
     
-    // 목표 회전값을 저장할 Quaternion
     const qTarget = new THREE.Quaternion();
     const eulerTmp = new THREE.Euler(0, 0, 0, 'XYZ');
 
     const toG = (v) => {
       const n = Number(v);
       if (!Number.isFinite(n)) return null;
-      // 가속도 센서의 단위가 m/s^2 일 경우 g 단위로 변환 (9.8 근처 값)
       return Math.abs(n) > 3.2 ? (n / 9.80665) : n;
     };
 
@@ -460,7 +621,6 @@
     function accelToAngles(ax, ay, az){
       const m = Math.hypot(ax, ay, az) || 1;
       const x = ax / m, y = ay / m, z = az / m;
-      // Y-up, Z-forward 좌표계 기준 Pitch, Roll 계산
       const pitch = Math.atan2(x, Math.hypot(y, z));
       const roll  = Math.atan2(y, z);
       return { pitch, roll };
@@ -468,11 +628,9 @@
     
     btnCalibrate.addEventListener('click', () => {
         const { pitch, roll } = accelToAngles(ema.ax, ema.ay, ema.az);
-        eulerTmp.set(pitch, 0, -roll, 'XYZ'); // 모델 좌표계에 맞게 z축에 roll 적용
+        eulerTmp.set(pitch, 0, -roll, 'XYZ');
         const currentOrientation = new THREE.Quaternion().setFromEuler(eulerTmp);
-        
         zeroQuaternionInverse.copy(currentOrientation).invert();
-
         btnCalibrate.textContent = "영점 설정 완료!";
         setTimeout(() => {
             btnCalibrate.textContent = "자세 보정 (영점 설정)";
@@ -483,7 +641,7 @@
     const clock = new THREE.Clock();
 
     function animate(){
-      const dt = clock.getDelta() * 1000; // ms 단위의 프레임 시간
+      const dt = clock.getDelta() * 1000;
       const now = performance.now();
       const tDisplay = now - BUFFER_DELAY_MS;
 
@@ -505,15 +663,11 @@
 
         const { pitch, roll } = accelToAngles(ema.ax, ema.ay, ema.az);
         
-        // --- 회전 계산 부분 (기존과 동일) ---
-        // 1. 현재 가속도 값으로 '절대' 자세 쿼터니언을 계산
         eulerTmp.set(pitch, 0, -roll, 'XYZ');
         const absoluteOrientation = new THREE.Quaternion().setFromEuler(eulerTmp);
 
-        // 2. 영점(zeroQuaternionInverse)을 곱하여 '상대' 자세를 계산하고 qTarget에 저장
         qTarget.multiplyQuaternions(absoluteOrientation, zeroQuaternionInverse);
         
-        // [핵심 개선] 현재 자동차의 각도에서 목표 각도(qTarget)까지 부드럽게 보간
         const slerpAlpha = 1 - Math.exp(-dt / ROT_RESP_MS);
         car.quaternion.slerp(qTarget, slerpAlpha);
 
